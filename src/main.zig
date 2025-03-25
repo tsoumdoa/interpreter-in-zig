@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const token = @import("token.zig");
+const lexer = @import("lexer.zig");
 
 pub fn main() !void {
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
@@ -14,4 +15,5 @@ pub fn main() !void {
 
 test {
     testing.refAllDecls(token);
+    testing.refAllDecls(lexer);
 }

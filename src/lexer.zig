@@ -5,7 +5,7 @@ const TokenType = token.TokenType;
 
 pub const Lexer = struct {
     input: []const u8,
-    pos: ?usize = null,
+    pos: usize = 0,
     readPos: usize = 0,
     char: ?u8 = null,
 
@@ -27,15 +27,26 @@ pub const Lexer = struct {
         l.readPos += 1;
     }
 
+    pub inline fn readNumber(l: *Lexer) []const u8 {
+        const start = l.pos;
+        while (isDigit(l.char.?)) : (l.readChar()) {}
+        return l.input[start..l.pos];
+    }
+
     pub inline fn readIdentifier(l: *Lexer) []const u8 {
-        const start = l.readPos;
-        while (l.char != 0) {
-            if (!isLetter(l.char.?)) {
+        const start = l.pos;
+        while (isLetter(l.char.?)) : (l.readChar()) {}
+        return l.input[start..l.pos];
+    }
+
+    pub inline fn skipWhitespace(l: *Lexer) void {
+        while (l.char) |c| {
+            if (c == ' ' or c == '\n' or c == '\t') {
+                l.readChar();
+            } else {
                 break;
             }
-            l.readChar();
         }
-        return l.input[start..l.readPos];
     }
 
     pub inline fn nextToken(l: *Lexer) token.Token {
@@ -44,6 +55,7 @@ pub const Lexer = struct {
             .Literal = "",
         };
 
+        l.skipWhitespace();
         if (l.char) |c| {
             switch (c) {
                 '=' => {
@@ -75,7 +87,13 @@ pub const Lexer = struct {
                 },
                 else => {
                     if (isLetter(c)) {
-                        tok = .{ .Type = token.lookupIdent(tok.Literal), .Literal = l.readIdentifier() };
+                        const i = l.readIdentifier();
+                        tok = .{ .Type = token.lookupIdent(i), .Literal = i };
+                        return tok;
+                    } else if (isDigit(c)) {
+                        const i = l.readNumber();
+                        tok = .{ .Type = TokenType.INT, .Literal = i };
+                        return tok;
                     } else tok = .{ .Type = TokenType.ILLEGAL, .Literal = "" };
                 },
             }
@@ -87,6 +105,10 @@ pub const Lexer = struct {
 
 fn isLetter(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+}
+
+fn isDigit(c: u8) bool {
+    return c >= '0' and c <= '9';
 }
 
 test "init Lexer" {
@@ -120,8 +142,9 @@ test "test nextToken (=+(){},;)" {
 
     while (l.char != 0) {
         const tok = l.nextToken();
-        try testing.expectEqual(tok.Type, expectedTokens[index].Type);
-        try testing.expectEqualStrings(tok.Literal, expectedTokens[index].Literal);
+
+        try testing.expectEqual(expectedTokens[index].Type, tok.Type);
+        try testing.expectEqualStrings(expectedTokens[index].Literal, tok.Literal);
         index += 1;
     }
 }
@@ -129,7 +152,7 @@ test "test nextToken (=+(){},;)" {
 test "test nexttToken" {
     const input =
         \\ let five = 5;
-        \\ let ten = 10;
+        \\ let ten = 0;
         \\
         \\ let add = fn(x, y) {
         \\   x + y;
@@ -146,7 +169,7 @@ test "test nexttToken" {
         .{ .Type = TokenType.LET, .Literal = "let" },
         .{ .Type = TokenType.IDENT, .Literal = "ten" },
         .{ .Type = TokenType.ASSIGN, .Literal = "=" },
-        .{ .Type = TokenType.INT, .Literal = "10" },
+        .{ .Type = TokenType.INT, .Literal = "0" },
         .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
         .{ .Type = TokenType.LET, .Literal = "let" },
         .{ .Type = TokenType.IDENT, .Literal = "add" },
@@ -174,14 +197,17 @@ test "test nexttToken" {
         .{ .Type = TokenType.IDENT, .Literal = "ten" },
         .{ .Type = TokenType.RPAREN, .Literal = ")" },
         .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+        .{ .Type = TokenType.EOF, .Literal = "" },
     };
+    // _ = expectedTokens;
     var l = Lexer.init(input);
     var index: usize = 0;
 
     while (l.char != 0) {
         const tok = l.nextToken();
-        try testing.expectEqual(tok.Type, expectedTokens[index].Type);
-        try testing.expectEqualStrings(tok.Literal, expectedTokens[index].Literal);
+        try testing.expectEqual(expectedTokens[index].Type, tok.Type);
+        try testing.expectEqualStrings(expectedTokens[index].Literal, tok.Literal);
+        // std.debug.print("type: {any}, literal:{s}\n", .{ tok.Type, tok.Literal });
         index += 1;
     }
 }

@@ -56,3 +56,8 @@ test "can initialize token" {
     try std.testing.expectEqualStrings("hello", token.Literal);
     try std.testing.expectEqual(TokenType.IDENT, lookupIdent(token.Literal));
 }
+
+test "lookupIdent" {
+    try std.testing.expectEqual(TokenType.LET, lookupIdent("let"));
+    try std.testing.expectEqual(TokenType.FUNCTION, lookupIdent("fn"));
+}

@@ -27,6 +27,17 @@ pub const Lexer = struct {
         l.readPos += 1;
     }
 
+    pub inline fn readIdentifier(l: *Lexer) []const u8 {
+        const start = l.readPos;
+        while (l.char != 0) {
+            if (!isLetter(l.char.?)) {
+                break;
+            }
+            l.readChar();
+        }
+        return l.input[start..l.readPos];
+    }
+
     pub inline fn nextToken(l: *Lexer) token.Token {
         var tok = token.Token{
             .Type = TokenType.EOF,
@@ -63,8 +74,9 @@ pub const Lexer = struct {
                     tok = .{ .Type = TokenType.EOF, .Literal = "" };
                 },
                 else => {
-                    // std.debug.panic("to be implemented", .{});
-                    // @panic("not implemented yet");
+                    if (isLetter(c)) {
+                        tok = .{ .Type = token.lookupIdent(tok.Literal), .Literal = l.readIdentifier() };
+                    } else tok = .{ .Type = TokenType.ILLEGAL, .Literal = "" };
                 },
             }
         }
@@ -72,6 +84,10 @@ pub const Lexer = struct {
         return tok;
     }
 };
+
+fn isLetter(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+}
 
 test "init Lexer" {
     const input = "Hello, world!";
@@ -85,7 +101,7 @@ test "init Lexer" {
     _ = a;
 }
 
-test "next token (=+(){},;)" {
+test "test nextToken (=+(){},;)" {
     const input = "=+(){},;";
 
     const expectedTokens = [_]token.Token{
@@ -99,6 +115,66 @@ test "next token (=+(){},;)" {
         .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
     };
 
+    var l = Lexer.init(input);
+    var index: usize = 0;
+
+    while (l.char != 0) {
+        const tok = l.nextToken();
+        try testing.expectEqual(tok.Type, expectedTokens[index].Type);
+        try testing.expectEqualStrings(tok.Literal, expectedTokens[index].Literal);
+        index += 1;
+    }
+}
+
+test "test nexttToken" {
+    const input =
+        \\ let five = 5;
+        \\ let ten = 10;
+        \\
+        \\ let add = fn(x, y) {
+        \\   x + y;
+        \\ };
+        \\
+        \\ let result = add(five, ten); 
+    ;
+    const expectedTokens = [_]token.Token{
+        .{ .Type = TokenType.LET, .Literal = "let" },
+        .{ .Type = TokenType.IDENT, .Literal = "five" },
+        .{ .Type = TokenType.ASSIGN, .Literal = "=" },
+        .{ .Type = TokenType.INT, .Literal = "5" },
+        .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+        .{ .Type = TokenType.LET, .Literal = "let" },
+        .{ .Type = TokenType.IDENT, .Literal = "ten" },
+        .{ .Type = TokenType.ASSIGN, .Literal = "=" },
+        .{ .Type = TokenType.INT, .Literal = "10" },
+        .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+        .{ .Type = TokenType.LET, .Literal = "let" },
+        .{ .Type = TokenType.IDENT, .Literal = "add" },
+        .{ .Type = TokenType.ASSIGN, .Literal = "=" },
+        .{ .Type = TokenType.FUNCTION, .Literal = "fn" },
+        .{ .Type = TokenType.LPAREN, .Literal = "(" },
+        .{ .Type = TokenType.IDENT, .Literal = "x" },
+        .{ .Type = TokenType.COMMA, .Literal = "," },
+        .{ .Type = TokenType.IDENT, .Literal = "y" },
+        .{ .Type = TokenType.RPAREN, .Literal = ")" },
+        .{ .Type = TokenType.LBRACE, .Literal = "{" },
+        .{ .Type = TokenType.IDENT, .Literal = "x" },
+        .{ .Type = TokenType.PLUS, .Literal = "+" },
+        .{ .Type = TokenType.IDENT, .Literal = "y" },
+        .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+        .{ .Type = TokenType.RBRACE, .Literal = "}" },
+        .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+        .{ .Type = TokenType.LET, .Literal = "let" },
+        .{ .Type = TokenType.IDENT, .Literal = "result" },
+        .{ .Type = TokenType.ASSIGN, .Literal = "=" },
+        .{ .Type = TokenType.IDENT, .Literal = "add" },
+        .{ .Type = TokenType.LPAREN, .Literal = "(" },
+        .{ .Type = TokenType.IDENT, .Literal = "five" },
+        .{ .Type = TokenType.COMMA, .Literal = "," },
+        .{ .Type = TokenType.IDENT, .Literal = "ten" },
+        .{ .Type = TokenType.RPAREN, .Literal = ")" },
+        .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
+    };
     var l = Lexer.init(input);
     var index: usize = 0;
 

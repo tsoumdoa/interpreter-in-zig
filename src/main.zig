@@ -1,19 +1,27 @@
 const std = @import("std");
+const process = std.process;
+const expect = std.testing.expect;
 const testing = std.testing;
 const token = @import("token.zig");
 const lexer = @import("lexer.zig");
+const repl = @import("repl.zig");
 
 pub fn main() !void {
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    const gpa = gpa_impl.allocator();
+    const user = try process.getEnvVarOwned(gpa, "USER");
 
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    try std.io.getStdOut().writer().print(
+        "Hello {s}! This is the Monkey programming language!\n",
+        .{user},
+    );
+    try std.io.getStdOut().writer().print("Feel free to type in commands\n", .{});
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    try repl.start();
 }
 
 test {
     testing.refAllDecls(token);
     testing.refAllDecls(lexer);
+    testing.refAllDecls(repl);
 }

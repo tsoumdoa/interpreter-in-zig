@@ -11,6 +11,14 @@ pub const TokenType = enum {
     ASSIGN,
     PLUS,
 
+    MINUS,
+    BANG,
+    ASTERISK,
+    SLASH,
+
+    LT, // <
+    GT, // >
+
     COMMA,
     SEMICOLON,
 
@@ -22,11 +30,24 @@ pub const TokenType = enum {
 
     FUNCTION,
     LET,
+    TRUE,
+    FALSE,
+    IF,
+    ELSE,
+    RETURN,
+
+    EQ,
+    NOT_EQ,
 };
 
 pub const Keywords = [_]KeywordType{
     .{ .keyword = "let", .tokenType = TokenType.LET },
     .{ .keyword = "fn", .tokenType = TokenType.FUNCTION },
+    .{ .keyword = "true", .tokenType = TokenType.TRUE },
+    .{ .keyword = "false", .tokenType = TokenType.FALSE },
+    .{ .keyword = "if", .tokenType = TokenType.IF },
+    .{ .keyword = "else", .tokenType = TokenType.ELSE },
+    .{ .keyword = "return", .tokenType = TokenType.RETURN },
 };
 
 pub const KeywordType = struct {

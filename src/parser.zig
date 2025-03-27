@@ -2,6 +2,7 @@ const ast = @import("ast.zig");
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const token = @import("token.zig");
+const debug = std.debug;
 
 const Parser = struct {
     lexer: *lexer.Lexer,
@@ -21,36 +22,41 @@ const Parser = struct {
     }
 
     pub fn parseProgram(p: *Parser) !*ast.Program {
-        var astree = ast.Program.init();
-        astree.Statements = p.parseStatement();
+        var program = ast.Program.init();
+        const s = try p.parseStatement();
+        try program.Statements.append(s);
 
         while (p.curToken.Type != token.TokenType.EOF) : (p.nextToken()) {
-            const stmt = p.parseStatement();
-            if (stmt) |s| try astree.Statements.append(s);
+            const stmt = try p.parseStatement();
+            try program.Statements.append(stmt);
+            // if (stmt) |s| try program.Statements.append(s);
         }
 
-        return &astree;
+        return &program;
     }
 
-    pub fn parseStatement(p: *Parser) ast.Statement {
+    pub fn parseStatement(p: *Parser) !ast.Statement {
         switch (p.curToken.Type) {
             token.TokenType.LET => {
-                return p.parseLetStatement();
+                return .{ .letStatement = try p.parseLetStatement() };
             },
             else => {
-                return null;
+                return error.ParseError;
+                // return null;
             },
         }
     }
 
-    pub fn parseLetStatement(p: *Parser) ast.LetStatement {
-        const stmt = ast.LetStatement{ .Token = p.curToken };
+    pub fn parseLetStatement(p: *Parser) !ast.LetStatement {
+        var stmt = ast.LetStatement{ .Token = p.curToken, .Value = undefined, .Name = undefined };
 
-        if (!p.expectPeek(token.TokenType.IDENT)) return null;
+        if (!p.expectPeek(token.TokenType.IDENT)) return error.ParseError;
 
-        stmt.Name = &ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
+        var ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
 
-        if (!p.expectPeek(token.TokenType.ASSIGN)) return null;
+        stmt.Name = &ident;
+
+        if (!p.expectPeek(token.TokenType.ASSIGN)) return error.ParseError;
 
         while (p.curTokenIs(token.TokenType.SEMICOLON)) : (p.nextToken()) {}
 
@@ -65,7 +71,7 @@ const Parser = struct {
         return p.peekToken.Type == tokenType;
     }
 
-    pub fn expectPeek(p: *Parser, tokenType: token.TokenType) true {
+    pub fn expectPeek(p: *Parser, tokenType: token.TokenType) bool {
         if (p.peekTokenIs(tokenType)) {
             p.nextToken();
             return true;
@@ -83,7 +89,19 @@ test "parse let statement" {
     ;
 
     var l = lexer.Lexer.init(input);
-    const p = Parser.init(&l);
+    var p = Parser.init(&l);
+
+    const program = try p.parseProgram();
+    _ = program;
+    // if (program == null) {
+    //     debug.panic("parse error");
+    // }
+
+    // if (p.parseProgram().Statements.len != 3) {
+    //     debug.panic("parse error");
+    // }
+
     std.debug.print("token: {s}\n", .{p.lexer.input});
+
     // _ = p;
 }

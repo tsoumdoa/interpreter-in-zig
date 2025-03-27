@@ -5,6 +5,8 @@ const testing = std.testing;
 const token = @import("token.zig");
 const lexer = @import("lexer.zig");
 const repl = @import("repl.zig");
+const ast = @import("ast.zig");
+const parser = @import("parser.zig");
 
 pub fn main() !void {
     var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -24,4 +26,6 @@ test {
     testing.refAllDecls(token);
     testing.refAllDecls(lexer);
     testing.refAllDecls(repl);
+    testing.refAllDecls(ast);
+    testing.refAllDecls(parser);
 }

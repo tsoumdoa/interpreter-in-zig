@@ -6,9 +6,8 @@ pub const Node = struct {
     pub fn tokenLiteal() []const u8 {}
 };
 
-pub const Statement = struct {
-    Node: Node,
-    pub fn statementNode() void {}
+pub const Statement = union {
+    letStatement: LetStatement,
 };
 
 pub const Expression = struct {
@@ -41,8 +40,11 @@ pub const Program = struct {
     Statements: *ArrayList(Statement),
 
     pub fn init() Program {
-        const gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        var list = ArrayList(Statement).init(gpa.allocator());
+        // const gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
+        const gpa = gpa_impl.allocator();
+        var list = ArrayList(Statement).init(gpa);
+        // defer list.deinit();
         return Program{ .Statements = &list };
     }
 

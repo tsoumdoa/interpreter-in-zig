@@ -27,9 +27,11 @@ const Parser = struct {
         var program = ast.Program.init(p.allocator);
         while (p.curToken.Type != token.TokenType.EOF) : (p.nextToken()) {
             const stmt = try p.parseStatement();
+
             switch (stmt) {
                 .err => |err| {
-                    debug.print("parse error {}\n", .{err});
+                    _ = err;
+                    // debug.print("parse error {}\n", .{err});
                 },
                 else => {
                     try program.addStatement(stmt);
@@ -46,7 +48,6 @@ const Parser = struct {
             },
             else => {
                 return .{ .err = ast.AstParseError.UnexpectedToken };
-                // return null;
             },
         }
     }

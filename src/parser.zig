@@ -8,9 +8,10 @@ const Parser = struct {
     lexer: *lexer.Lexer,
     curToken: token.Token = undefined,
     peekToken: token.Token = undefined,
+    allocator: std.mem.Allocator,
 
-    pub fn init(l: *lexer.Lexer) Parser {
-        var p = Parser{ .lexer = l };
+    pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
+        var p = Parser{ .lexer = l, .allocator = allocator };
         p.nextToken();
         p.nextToken();
         return p;
@@ -21,33 +22,35 @@ const Parser = struct {
         p.peekToken = p.lexer.nextToken();
     }
 
-    pub fn parseProgram(p: *Parser) !*ast.Program {
-        var program = ast.Program.init();
-        const s = try p.parseStatement();
-        try program.Statements.append(s);
-
+    pub inline fn parseProgram(p: *Parser) !ast.Program {
+        var program = ast.Program.init(p.allocator);
         while (p.curToken.Type != token.TokenType.EOF) : (p.nextToken()) {
             const stmt = try p.parseStatement();
-            try program.Statements.append(stmt);
-            // if (stmt) |s| try program.Statements.append(s);
+            switch (stmt) {
+                .err => |err| {
+                    debug.print("parse error {}\n", .{err});
+                },
+                else => {
+                    try program.addStatement(stmt);
+                },
+            }
         }
-
-        return &program;
+        return program;
     }
 
-    pub fn parseStatement(p: *Parser) !ast.Statement {
+    pub inline fn parseStatement(p: *Parser) !ast.Statement {
         switch (p.curToken.Type) {
             token.TokenType.LET => {
                 return .{ .letStatement = try p.parseLetStatement() };
             },
             else => {
-                return error.ParseError;
+                return .{ .err = ast.AstParseError.UnexpectedToken };
                 // return null;
             },
         }
     }
 
-    pub fn parseLetStatement(p: *Parser) !ast.LetStatement {
+    pub inline fn parseLetStatement(p: *Parser) !ast.LetStatement {
         var stmt = ast.LetStatement{ .Token = p.curToken, .Value = undefined, .Name = undefined };
 
         if (!p.expectPeek(token.TokenType.IDENT)) return error.ParseError;
@@ -82,6 +85,7 @@ const Parser = struct {
 };
 
 test "parse let statement" {
+    const testAlloc = std.testing.allocator;
     const input =
         \\ let x = 5;
         \\ let y = 10;
@@ -89,19 +93,18 @@ test "parse let statement" {
     ;
 
     var l = lexer.Lexer.init(input);
-    var p = Parser.init(&l);
+    var p = Parser.init(&l, testAlloc);
+    var program = try p.parseProgram();
+    std.debug.print("program: {any}\n", .{program});
+    defer program.deinit();
+    // defer p.allocator.destroy(program);
 
-    const program = try p.parseProgram();
-    _ = program;
-    // if (program == null) {
-    //     debug.panic("parse error");
-    // }
-
+    // _ = program;
+    // std.debug.print("token: {any}\n", .{program});
     // if (p.parseProgram().Statements.len != 3) {
     //     debug.panic("parse error");
     // }
-
-    std.debug.print("token: {s}\n", .{p.lexer.input});
+    // std.debug.print("token: {s}\n", .{p.lexer.input});
 
     // _ = p;
 }

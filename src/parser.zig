@@ -3,6 +3,7 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 const token = @import("token.zig");
 const debug = std.debug;
+const testing = std.testing;
 
 const Parser = struct {
     lexer: *lexer.Lexer,
@@ -55,9 +56,13 @@ const Parser = struct {
 
         if (!p.expectPeek(token.TokenType.IDENT)) return error.ParseError;
 
-        var ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
+        //this gets destroed in  program.deinit
+        //maybe there is a better way to do this...
+        const identPtr = try p.allocator.create(ast.Identifier);
+        const ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
+        identPtr.* = ident;
 
-        stmt.Name = &ident;
+        stmt.Name = identPtr;
 
         if (!p.expectPeek(token.TokenType.ASSIGN)) return error.ParseError;
 
@@ -85,26 +90,26 @@ const Parser = struct {
 };
 
 test "parse let statement" {
-    const testAlloc = std.testing.allocator;
+    const testAlloc = testing.allocator;
     const input =
         \\ let x = 5;
         \\ let y = 10;
         \\ let foobar = 939393;
     ;
 
+    const expectedIdentiefers = [_][]const u8{ "x", "y", "foobar" };
+
     var l = lexer.Lexer.init(input);
     var p = Parser.init(&l, testAlloc);
     var program = try p.parseProgram();
-    std.debug.print("program: {any}\n", .{program});
     defer program.deinit();
-    // defer p.allocator.destroy(program);
 
-    // _ = program;
-    // std.debug.print("token: {any}\n", .{program});
-    // if (p.parseProgram().Statements.len != 3) {
-    //     debug.panic("parse error");
-    // }
-    // std.debug.print("token: {s}\n", .{p.lexer.input});
+    if (program.Statements.items.len != 3) {
+        debug.panic("program.Statements.items.len != 3, got len: {}", .{program.Statements.items.len});
+    }
 
-    // _ = p;
+    for (expectedIdentiefers, 0..) |expectedIdent, i| {
+        const ident = program.Statements.items[i].letStatement.Name;
+        try testing.expectEqualStrings(expectedIdent, ident.Value);
+    }
 }

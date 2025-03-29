@@ -66,6 +66,7 @@ pub const Program = struct {
             switch (stmt.*) {
                 .err => |_| {},
                 else => {
+                    p.allocator.destroy(stmt.letStatement.Name);
                     p.allocator.destroy(stmt);
                 },
             }

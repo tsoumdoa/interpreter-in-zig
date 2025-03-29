@@ -6,8 +6,20 @@ pub const Node = struct {
     pub fn tokenLiteal() []const u8 {}
 };
 
-pub const Statement = union {
+const StatementType = enum {
+    letStatement,
+    err,
+};
+
+pub const Statement = union(StatementType) {
     letStatement: LetStatement,
+    err: AstParseError,
+};
+pub const AstParseError = enum {
+    ParseError,
+    UnexpectedToken,
+    InvalidSyntax,
+    // ... other errors
 };
 
 pub const Expression = struct {
@@ -20,7 +32,11 @@ pub const LetStatement = struct {
     Name: *Identifier,
     Value: Expression,
 
-    pub fn StatementNode() void {}
+    pub fn statementNode(ls: *LetStatement) void {
+        _ = ls;
+        //todo
+
+    }
     pub fn tokenLiteral(ls: *LetStatement) []const u8 {
         return ls.Token.Literal;
     }
@@ -37,15 +53,30 @@ pub const Identifier = struct {
 };
 
 pub const Program = struct {
-    Statements: *ArrayList(Statement),
+    Statements: ArrayList(*Statement),
+    allocator: std.mem.Allocator,
 
-    pub fn init() Program {
-        // const gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
-        const gpa = gpa_impl.allocator();
-        var list = ArrayList(Statement).init(gpa);
-        // defer list.deinit();
-        return Program{ .Statements = &list };
+    pub fn init(allocator: std.mem.Allocator) Program {
+        const list = ArrayList(*Statement).init(allocator);
+        return Program{ .Statements = list, .allocator = allocator };
+    }
+
+    pub fn deinit(p: *Program) void {
+        for (p.Statements.items) |stmt| {
+            switch (stmt.*) {
+                .err => |_| {},
+                else => {
+                    p.allocator.destroy(stmt);
+                },
+            }
+        }
+        p.Statements.deinit();
+    }
+
+    pub inline fn addStatement(p: *Program, stmt: Statement) !void {
+        const stmtPtr = try p.allocator.create(Statement);
+        stmtPtr.* = stmt;
+        try p.Statements.append(stmtPtr);
     }
 
     pub fn TokenLiteral(p: Program) Program {

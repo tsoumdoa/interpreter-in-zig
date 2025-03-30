@@ -4,23 +4,41 @@ const lexer = @import("lexer.zig");
 const token = @import("token.zig");
 const debug = std.debug;
 const testing = std.testing;
+const ArrayList = std.ArrayList;
 
 const Parser = struct {
     lexer: *lexer.Lexer,
     curToken: token.Token = undefined,
     peekToken: token.Token = undefined,
     allocator: std.mem.Allocator,
+    errors: ArrayList([]const u8),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
-        var p = Parser{ .lexer = l, .allocator = allocator };
+        var p = Parser{
+            .lexer = l,
+            .allocator = allocator,
+            .errors = ArrayList([]const u8).init(allocator),
+        };
         p.nextToken();
         p.nextToken();
         return p;
     }
 
+    pub fn deinit(p: *Parser) void {
+        for (p.errors.items) |err| {
+            p.allocator.free(err);
+        }
+        p.errors.deinit();
+    }
+
     pub fn nextToken(p: *Parser) void {
         p.curToken = p.peekToken;
         p.peekToken = p.lexer.nextToken();
+    }
+
+    pub fn peekError(p: *Parser, t: token.TokenType) !void {
+        const msg = try std.fmt.allocPrint(p.allocator, "expected nex to be {}, got {} instead", .{ t, p.peekToken.Type });
+        try p.errors.append(msg);
     }
 
     pub inline fn parseProgram(p: *Parser) !ast.Program {
@@ -55,7 +73,10 @@ const Parser = struct {
     pub inline fn parseLetStatement(p: *Parser) !ast.LetStatement {
         var stmt = ast.LetStatement{ .Token = p.curToken, .Value = undefined, .Name = undefined };
 
-        if (!p.expectPeek(token.TokenType.IDENT)) return error.ParseError;
+        const isIdent = p.expectPeek(token.TokenType.IDENT) catch {
+            return error.ParseError;
+        };
+        _ = isIdent;
 
         //this gets destroed in  program.deinit
         //maybe there is a better way to do this...
@@ -65,7 +86,10 @@ const Parser = struct {
 
         stmt.Name = identPtr;
 
-        if (!p.expectPeek(token.TokenType.ASSIGN)) return error.ParseError;
+        const isAssign = p.expectPeek(token.TokenType.ASSIGN) catch {
+            return error.ParseError;
+        };
+        _ = isAssign;
 
         while (p.curTokenIs(token.TokenType.SEMICOLON)) : (p.nextToken()) {}
 
@@ -80,11 +104,12 @@ const Parser = struct {
         return p.peekToken.Type == tokenType;
     }
 
-    pub fn expectPeek(p: *Parser, tokenType: token.TokenType) bool {
+    pub fn expectPeek(p: *Parser, tokenType: token.TokenType) !bool {
         if (p.peekTokenIs(tokenType)) {
             p.nextToken();
             return true;
         } else {
+            try p.peekError(tokenType);
             return false;
         }
     }
@@ -112,5 +137,31 @@ test "parse let statement" {
     for (expectedIdentiefers, 0..) |expectedIdent, i| {
         const ident = program.Statements.items[i].letStatement.Name;
         try testing.expectEqualStrings(expectedIdent, ident.Value);
+    }
+}
+test "parse let statement with invalid" {
+    const testAlloc = testing.allocator;
+    const input =
+        \\ let x 5;
+        \\ let  = 10;
+        \\ let 939393;
+    ;
+
+    const expectedErrors = [_][]const u8{
+        "expected nex to be token.TokenType.ASSIGN, got token.TokenType.INT instead",
+        "expected nex to be token.TokenType.IDENT, got token.TokenType.ASSIGN instead",
+        "expected nex to be token.TokenType.IDENT, got token.TokenType.INT instead",
+        "expected nex to be token.TokenType.ASSIGN, got token.TokenType.INT instead",
+    };
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+
+    for (p.errors.items, 0..) |err, i| {
+        try testing.expectEqualStrings(expectedErrors[i], err);
     }
 }

@@ -112,10 +112,9 @@ const Parser = struct {
 
         while (p.curTokenIs(token.TokenType.SEMICOLON)) : (p.nextToken()) {}
 
-        //ignoring int for now
-        const buffer = try p.allocator.alloc(u8, p.peekToken.Literal.len);
-        @memcpy(buffer, p.peekToken.Literal);
-        stmt.ReturnValue = buffer;
+        const identPtr = try p.allocator.create(ast.Identifier);
+        identPtr.* = ast.Identifier{ .Token = p.peekToken, .Value = p.peekToken.Literal };
+        stmt.ReturnValue = identPtr;
 
         return stmt;
     }
@@ -163,6 +162,7 @@ test "parse let statement" {
         try testing.expectEqualStrings(expectedIdent, ident.Value);
     }
 }
+
 test "parse let statement with invalid" {
     const testAlloc = testing.allocator;
     const input =
@@ -211,6 +211,6 @@ test "parse return ``return` statement" {
 
     for (expectedIdentiefers, 0..) |expectedIdent, i| {
         const ident = program.Statements.items[i].returnStatement.ReturnValue;
-        try testing.expectEqualStrings(expectedIdent, ident);
+        try testing.expectEqualStrings(expectedIdent, ident.Value);
     }
 }

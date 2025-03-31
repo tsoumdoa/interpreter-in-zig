@@ -49,7 +49,6 @@ const Parser = struct {
             switch (stmt) {
                 .err => |err| {
                     _ = err;
-                    // debug.print("parse error {}\n", .{err});
                 },
                 else => {
                     try program.addStatement(stmt);
@@ -64,6 +63,9 @@ const Parser = struct {
             token.TokenType.LET => {
                 return .{ .letStatement = try p.parseLetStatement() };
             },
+            token.TokenType.RETURN => {
+                return .{ .returnStatement = try p.parseReturnStatement() };
+            },
             else => {
                 return .{ .err = ast.AstParseError.UnexpectedToken };
             },
@@ -71,7 +73,7 @@ const Parser = struct {
     }
 
     pub inline fn parseLetStatement(p: *Parser) !ast.LetStatement {
-        var stmt = ast.LetStatement{ .Token = p.curToken, .Value = undefined, .Name = undefined };
+        var stmt = ast.LetStatement{ .Token = p.curToken, .Name = undefined, .Value = undefined };
 
         const isIdent = p.expectPeek(token.TokenType.IDENT) catch {
             return error.ParseError;
@@ -81,8 +83,7 @@ const Parser = struct {
         //this gets destroed in  program.deinit
         //maybe there is a better way to do this...
         const identPtr = try p.allocator.create(ast.Identifier);
-        const ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
-        identPtr.* = ident;
+        identPtr.* = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
 
         stmt.Name = identPtr;
 
@@ -92,6 +93,29 @@ const Parser = struct {
         _ = isAssign;
 
         while (p.curTokenIs(token.TokenType.SEMICOLON)) : (p.nextToken()) {}
+
+        return stmt;
+    }
+
+    pub inline fn parseReturnStatement(p: *Parser) !ast.ReturnStatement {
+        var stmt = ast.ReturnStatement.init(p.curToken);
+
+        const isIdent = p.expectPeek(token.TokenType.IDENT) catch {
+            return error.ParseError;
+        };
+        _ = isIdent;
+
+        const isAssign = p.expectPeek(token.TokenType.ASSIGN) catch {
+            return error.ParseError;
+        };
+        _ = isAssign;
+
+        while (p.curTokenIs(token.TokenType.SEMICOLON)) : (p.nextToken()) {}
+
+        //ignoring int for now
+        const buffer = try p.allocator.alloc(u8, p.peekToken.Literal.len);
+        @memcpy(buffer, p.peekToken.Literal);
+        stmt.ReturnValue = buffer;
 
         return stmt;
     }
@@ -160,8 +184,33 @@ test "parse let statement with invalid" {
     var program = try p.parseProgram();
     defer program.deinit();
 
-
     for (p.errors.items, 0..) |err, i| {
         try testing.expectEqualStrings(expectedErrors[i], err);
+    }
+}
+
+test "parse return ``return` statement" {
+    const testAlloc = testing.allocator;
+    const input =
+        \\ return 5;
+        \\ return 10;
+        \\ return 939393;
+    ;
+
+    const expectedIdentiefers = [_][]const u8{ "5", "10", "939393" };
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    if (program.Statements.items.len != 3) {
+        debug.panic("program.Statements.items.len != 3, got len: {}", .{program.Statements.items.len});
+    }
+
+    for (expectedIdentiefers, 0..) |expectedIdent, i| {
+        const ident = program.Statements.items[i].returnStatement.ReturnValue;
+        try testing.expectEqualStrings(expectedIdent, ident);
     }
 }

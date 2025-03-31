@@ -2,17 +2,24 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const token = @import("token.zig");
 
-pub const Node = struct {
-    pub fn tokenLiteal() []const u8 {}
-};
+// pub const Node = struct {
+//     pub fn tokenLiteal() []const u8 {}
+// };
+
+// pub const Expression = struct {
+//     Node: Node,
+//     pub fn expressionNode() void {}
+// };
 
 const StatementType = enum {
     letStatement,
+    returnStatement,
     err,
 };
 
 pub const Statement = union(StatementType) {
     letStatement: LetStatement,
+    returnStatement: ReturnStatement,
     err: AstParseError,
 };
 pub const AstParseError = enum {
@@ -22,23 +29,28 @@ pub const AstParseError = enum {
     // ... other errors
 };
 
-pub const Expression = struct {
-    Node: Node,
-    pub fn expressionNode() void {}
-};
-
 pub const LetStatement = struct {
     Token: token.Token,
     Name: *Identifier,
-    Value: Expression,
+    Value: []const u8,
 
-    pub fn statementNode(ls: *LetStatement) void {
-        _ = ls;
-        //todo
-
-    }
+    pub fn statementNode() void {}
     pub fn tokenLiteral(ls: *LetStatement) []const u8 {
         return ls.Token.Literal;
+    }
+};
+
+pub const ReturnStatement = struct {
+    Token: token.Token,
+    ReturnValue: []const u8,
+
+    pub fn init(t: token.Token) ReturnStatement {
+        return ReturnStatement{ .Token = t, .ReturnValue = undefined };
+    }
+
+    pub fn statementNode() void {}
+    pub fn tokenLiteral(rs: *ReturnStatement) []const u8 {
+        return rs.Token.Literal;
     }
 };
 
@@ -65,8 +77,12 @@ pub const Program = struct {
         for (p.Statements.items) |stmt| {
             switch (stmt.*) {
                 .err => |_| {},
-                else => {
-                    p.allocator.destroy(stmt.letStatement.Name);
+                .letStatement => |let_stmt| {
+                    p.allocator.destroy(let_stmt.Name);
+                    p.allocator.destroy(stmt);
+                },
+                .returnStatement => |ret_stmt| {
+                    p.allocator.free(ret_stmt.ReturnValue);
                     p.allocator.destroy(stmt);
                 },
             }

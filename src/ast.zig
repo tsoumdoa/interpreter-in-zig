@@ -9,6 +9,11 @@ const token = @import("token.zig");
 
 pub const Expression = struct {
     // Node: Node,
+    
+    pub fn init() Expression {
+        return Expression{};
+    }
+
     pub fn expressionNode() void {}
     pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
         _ = e;
@@ -82,6 +87,9 @@ pub const ExpressionStatement = struct {
     Token: token.Token,
     Exp: Expression,
 
+    pub fn init(t: token.Token) ExpressionStatement {
+        return ExpressionStatement{ .Token = t, .Exp = undefined };
+    }
     pub fn statementNode() void {}
     pub fn tokenLiteral(es: *const ExpressionStatement) []const u8 {
         return es.Token.Literal;

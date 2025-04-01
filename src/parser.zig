@@ -4,7 +4,21 @@ const lexer = @import("lexer.zig");
 const token = @import("token.zig");
 const debug = std.debug;
 const testing = std.testing;
+const assert = debug.assert;
 const ArrayList = std.ArrayList;
+
+pub const PrefixParseFn = fn () anyerror!ast.Expression; // Returns ast.Expression
+pub const InfixParseFn = fn (ast.Expression) anyerror!ast.Expression; // Takes and returns ast.Expression
+
+const TokenPrecedence = enum(u8) {
+    LOWEST = 1,
+    EQUALS,
+    LESSGREATER,
+    SUM,
+    PRODUCT,
+    PREFIX,
+    CALL,
+};
 
 const Parser = struct {
     lexer: *lexer.Lexer,
@@ -13,12 +27,21 @@ const Parser = struct {
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
 
+    prexifParseFns: std.StringHashMap(*PrefixParseFn),
+    infixParseFns: std.StringHashMap(*InfixParseFn),
+
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
             .lexer = l,
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
+            .prexifParseFns = std.StringHashMap(*PrefixParseFn).init(allocator),
+            .infixParseFns = std.StringHashMap(*InfixParseFn).init(allocator),
         };
+
+        const ptr = &p.parseIdentifier();
+        //todo => fix this...
+        p.registerPrefixParseFn(token.TokenType.IDENT, ptr);
         p.nextToken();
         p.nextToken();
         return p;
@@ -67,7 +90,10 @@ const Parser = struct {
                 return .{ .returnStatement = try p.parseReturnStatement() };
             },
             else => {
+                const stmt = try p.parseExpressionStatement();
+                _ = stmt;
                 return .{ .err = ast.AstParseError.UnexpectedToken };
+                // return .{ .expressionStatement = try p.parseExpressionStatement() };
             },
         }
     }
@@ -117,6 +143,51 @@ const Parser = struct {
         stmt.ReturnValue = identPtr;
 
         return stmt;
+    }
+
+    pub inline fn parseExpressionStatement(p: *Parser) !ast.ExpressionStatement {
+        // pub inline fn parseExpressionStatement(p: *Parser) !ast.ExpressionStatement {
+        const stmt = ast.ExpressionStatement.init(p.curToken);
+        const expr = p.parseExpression(TokenPrecedence.LOWEST);
+        _ = expr;
+        // stmt.Exp = expr;
+        if (p.peekTokenIs(token.TokenType.SEMICOLON)) {
+            p.nextToken();
+        }
+        return stmt;
+    }
+
+    pub inline fn parseExpression(p: *Parser, precedence: TokenPrecedence) ast.Expression {
+        _ = precedence;
+        // ast.Expression
+        const prefix = p.prexifParseFns.get(p.curToken.Literal);
+        if (prefix == null) {
+            std.debug.print("prefix: {any}\n", .{prefix});
+            // return null;
+        }
+        const expr = ast.Expression.init();
+        return expr;
+
+        // if (prefix) |pfn| {
+        //     return pfn();
+        // } else {
+        //     return null;
+        // }
+    }
+
+    pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
+        return ast.Identifier{
+            .Token = p.curToken,
+            .Value = p.curToken.Literal,
+        };
+    }
+
+    pub inline fn registerPrefixParseFn(p: *Parser, tokenType: token.TokenType, fnPtr: *PrefixParseFn) void {
+        try p.prexifParseFns.put(@intFromEnum(tokenType), fnPtr);
+    }
+
+    pub inline fn registerInfixParseFn(p: *Parser, toknType: token.TokenType, fnPtr: *InfixParseFn) void {
+        try p.infixParseFns.put(@intFromEnum(toknType), fnPtr);
     }
 
     pub fn curTokenIs(p: *Parser, tokenType: token.TokenType) bool {
@@ -214,3 +285,30 @@ test "parse return ``return` statement" {
         try testing.expectEqualStrings(expectedIdent, ident.Value);
     }
 }
+
+test "token precedence" {
+    const lowest = @intFromEnum(TokenPrecedence.LOWEST);
+    try testing.expectEqual(1, lowest);
+    const highest = @intFromEnum(TokenPrecedence.CALL);
+    try testing.expectEqual(7, highest);
+}
+
+// test "parse itentifer expression" {
+//     const testAlloc = testing.allocator;
+//     const input = "foobar;";
+//     var l = lexer.Lexer.init(input);
+//     var p = Parser.init(&l, testAlloc);
+//     defer p.deinit();
+//     // try p.checkParseError();
+//     var program = try p.parseProgram();
+//     defer program.deinit();
+//
+//     if (program.Statements.items.len != 1) {
+//         debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+//     }
+//
+//     // const stmt = program.Statements.items[0].expressionStatement;
+//     //
+//     // const ident = stmt.Exp.expressionNode();
+//     // _ = ident;
+// }

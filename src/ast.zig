@@ -10,6 +10,10 @@ const token = @import("token.zig");
 pub const Expression = struct {
     // Node: Node,
     pub fn expressionNode() void {}
+    pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
+        _ = e;
+        try buffer.appendSlice("expression");
+    }
 };
 
 const StatementType = enum {
@@ -38,11 +42,18 @@ pub const LetStatement = struct {
     Value: *Identifier,
 
     pub fn statementNode() void {}
-    pub fn tokenLiteral(ls: *LetStatement) []const u8 {
+    pub fn tokenLiteral(ls: *const LetStatement) []const u8 {
         return ls.Token.Literal;
     }
-    pub fn string(ls: LetStatement) []const u8 {
-        return ls.Value.string();
+    pub fn string(ls: *const LetStatement, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(ls.tokenLiteral());
+        try buffer.appendSlice(" ");
+        try buffer.appendSlice(ls.Name.string());
+        try buffer.appendSlice(" = ");
+        if (ls.Value.string().len > 0) {
+            try buffer.appendSlice(ls.Value.string());
+        }
+        try buffer.appendSlice(";");
     }
 };
 
@@ -54,11 +65,16 @@ pub const ReturnStatement = struct {
         return ReturnStatement{ .Token = t, .ReturnValue = undefined };
     }
     pub fn statementNode() void {}
-    pub fn tokenLiteral(rs: *ReturnStatement) []const u8 {
+    pub fn tokenLiteral(rs: *const ReturnStatement) []const u8 {
         return rs.Token.Literal;
     }
-    pub fn string(rs: ReturnStatement) []const u8 {
-        return rs.ReturnValue.string();
+    pub fn string(rs: *const ReturnStatement, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(rs.tokenLiteral());
+        try buffer.appendSlice(" ");
+        if (rs.ReturnValue.string().len > 0) {
+            try buffer.appendSlice(rs.ReturnValue.string());
+        }
+        try buffer.appendSlice(";");
     }
 };
 
@@ -67,12 +83,11 @@ pub const ExpressionStatement = struct {
     Exp: Expression,
 
     pub fn statementNode() void {}
-    pub fn tokenLiteral(es: *ExpressionStatement) []const u8 {
+    pub fn tokenLiteral(es: *const ExpressionStatement) []const u8 {
         return es.Token.Literal;
     }
-    pub fn string(es: ExpressionStatement) []const u8 {
-        _ = es;
-        return "";
+    pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
+        try es.Exp.string(buffer);
     }
 };
 
@@ -81,10 +96,10 @@ pub const Identifier = struct {
     Value: []const u8,
 
     pub fn expressionNode() void {}
-    pub fn tokenLiteral(i: *Identifier) []const u8 {
+    pub fn tokenLiteral(i: *const Identifier) []const u8 {
         return i.Token.Literal;
     }
-    pub fn string(i: Identifier) []const u8 {
+    pub fn string(i: *const Identifier) []const u8 {
         return i.Value;
     }
 };
@@ -125,25 +140,23 @@ pub const Program = struct {
         try p.Statements.append(stmtPtr);
     }
 
-    pub inline fn string(p: *Program) ![]const u8 {
+    pub inline fn string(p: *Program) !*ArrayList(u8) {
         var buffer = ArrayList(u8).init(p.allocator);
         for (p.Statements.items) |stmt| {
             switch (stmt.*) {
                 .letStatement => |let_stmt| {
-                    try buffer.appendSlice(let_stmt.string());
+                    try let_stmt.string(&buffer);
                 },
                 .returnStatement => |ret_stmt| {
-                    try buffer.appendSlice(ret_stmt.string());
+                    try ret_stmt.string(&buffer);
                 },
                 .expressionStatement => |exp_stmt| {
-                    try buffer.appendSlice(exp_stmt.string());
+                    try exp_stmt.string(&buffer);
                 },
                 .err => |_| {},
             }
         }
-        std.debug.print("buffer.items {s}\n", .{buffer.items});
-        defer buffer.deinit();
-        return "";
+        return &buffer;
     }
 
     pub fn TokenLiteral(p: Program) Program {
@@ -175,8 +188,8 @@ test "test return value of string fn" {
     } };
     try p.Statements.append(&lstm);
 
-    // const expected = "let myVar = anotherVar;";
-    const v = try p.string();
-    _ = v;
-    // try testing.expectEqualStrings(expected, v);
+    const expected = "let myVar = anotherVar;";
+    const b = try p.string();
+    defer b.deinit();
+    try testing.expectEqualStrings(expected, b.items);
 }

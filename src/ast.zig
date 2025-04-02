@@ -7,24 +7,36 @@ const token = @import("token.zig");
 //     pub fn tokenLiteal() []const u8 {}
 // };
 
-pub const Expression = struct {
-    // Node: Node,
-    
-    pub fn init() Expression {
-        return Expression{};
-    }
+// pub const Expression = struct {
+//     // Node: Node,
+//
+//     pub fn init() Expression {
+//         return Expression{};
+//     }
+//
+//     pub fn expressionNode() void {}
+//     pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
+//         _ = e;
+//         try buffer.appendSlice("expression");
+//     }
+// };
 
-    pub fn expressionNode() void {}
-    pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
-        _ = e;
-        try buffer.appendSlice("expression");
-    }
+// implmenet ExpressionType and Expression tagged union
+const ExpressionType = enum {
+    ident,
+    err,
+};
+
+pub const Expression = union(ExpressionType) {
+    ident: Identifier,
+    err: AstParseError,
 };
 
 const StatementType = enum {
     letStatement,
     returnStatement,
     expressionStatement,
+    identStatement,
     err,
 };
 
@@ -32,6 +44,7 @@ pub const Statement = union(StatementType) {
     letStatement: LetStatement,
     returnStatement: ReturnStatement,
     expressionStatement: ExpressionStatement,
+    identStatement: Identifier,
     err: AstParseError,
 };
 pub const AstParseError = enum {
@@ -94,9 +107,9 @@ pub const ExpressionStatement = struct {
     pub fn tokenLiteral(es: *const ExpressionStatement) []const u8 {
         return es.Token.Literal;
     }
-    pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
-        try es.Exp.string(buffer);
-    }
+    // pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
+    //     try es.Exp.string(buffer);
+    // }
 };
 
 pub const Identifier = struct {
@@ -134,8 +147,12 @@ pub const Program = struct {
                     p.allocator.destroy(stmt);
                 },
                 .expressionStatement => |exp_stmt| {
-                    _ = exp_stmt;
-                    //todo
+                    _ = exp_stmt.Exp;
+                    p.allocator.destroy(stmt);
+                },
+                .identStatement => |ident_stmt| {
+                    p.allocator.free(ident_stmt.Value);
+                    p.allocator.destroy(stmt);
                 },
             }
         }
@@ -158,10 +175,11 @@ pub const Program = struct {
                 .returnStatement => |ret_stmt| {
                     try ret_stmt.string(&buffer);
                 },
-                .expressionStatement => |exp_stmt| {
-                    try exp_stmt.string(&buffer);
-                },
+                // .expressionStatement => |exp_stmt| {
+                // try exp_stmt.string(&buffer);
+                // },
                 .err => |_| {},
+                else => {},
             }
         }
         return &buffer;

@@ -7,9 +7,6 @@ const testing = std.testing;
 const assert = debug.assert;
 const ArrayList = std.ArrayList;
 
-pub const PrefixParseFn = fn () anyerror!ast.Expression; // Returns ast.Expression
-pub const InfixParseFn = fn (ast.Expression) anyerror!ast.Expression; // Takes and returns ast.Expression
-
 const TokenPrecedence = enum(u8) {
     LOWEST = 1,
     EQUALS,
@@ -27,21 +24,13 @@ const Parser = struct {
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
 
-    prexifParseFns: std.StringHashMap(*PrefixParseFn),
-    infixParseFns: std.StringHashMap(*InfixParseFn),
-
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
             .lexer = l,
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
-            .prexifParseFns = std.StringHashMap(*PrefixParseFn).init(allocator),
-            .infixParseFns = std.StringHashMap(*InfixParseFn).init(allocator),
         };
 
-        const ptr = &p.parseIdentifier();
-        //todo => fix this...
-        p.registerPrefixParseFn(token.TokenType.IDENT, ptr);
         p.nextToken();
         p.nextToken();
         return p;
@@ -159,12 +148,13 @@ const Parser = struct {
 
     pub inline fn parseExpression(p: *Parser, precedence: TokenPrecedence) ast.Expression {
         _ = precedence;
+        _ = p;
         // ast.Expression
-        const prefix = p.prexifParseFns.get(p.curToken.Literal);
-        if (prefix == null) {
-            std.debug.print("prefix: {any}\n", .{prefix});
-            // return null;
-        }
+        // const prefix = p.prexifParseFns.get(p.curToken.Literal);
+        // if (prefix == null) {
+        //     std.debug.print("prefix: {any}\n", .{prefix});
+        //     // return null;
+        // }
         const expr = ast.Expression.init();
         return expr;
 
@@ -180,14 +170,6 @@ const Parser = struct {
             .Token = p.curToken,
             .Value = p.curToken.Literal,
         };
-    }
-
-    pub inline fn registerPrefixParseFn(p: *Parser, tokenType: token.TokenType, fnPtr: *PrefixParseFn) void {
-        try p.prexifParseFns.put(@intFromEnum(tokenType), fnPtr);
-    }
-
-    pub inline fn registerInfixParseFn(p: *Parser, toknType: token.TokenType, fnPtr: *InfixParseFn) void {
-        try p.infixParseFns.put(@intFromEnum(toknType), fnPtr);
     }
 
     pub fn curTokenIs(p: *Parser, tokenType: token.TokenType) bool {

@@ -8,7 +8,7 @@ const testing = std.testing;
 const assert = debug.assert;
 const ArrayList = std.ArrayList;
 
-const TokenPrecedence = enum(u8) {
+pub const TokenPrecedence = enum(u8) {
     LOWEST = 1,
     EQUALS,
     LESSGREATER,
@@ -22,7 +22,7 @@ const precedences = std.StaticStringMap(TokenPrecedence, .{
     .{ .key = "==", .value = TokenPrecedence.EQ },
 });
 
-const Parser = struct {
+pub const Parser = struct {
     lexer: *lexer.Lexer,
     curToken: token.Token = undefined,
     peekToken: token.Token = undefined,
@@ -139,14 +139,36 @@ const Parser = struct {
         while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < @intFromEnum(p.peekPrecedent())) : (p.nextToken()) {}
 
         switch (p.curToken.Type) {
-            TokenType.IDENT => {
-                return .{ .ident = p.parseIdentifier() };
+            TokenType.IDENT => return .{ .ident = p.parseIdentifier() },
+            TokenType.INT => return .{ .int = p.parseInteger() },
+            TokenType.BANG => return .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.MINUS => return .{ .prefix = try p.parsePrefixExpression() },
+            else => {
+                try p.noPrefixParaseFnError(p.curToken.Type);
+                return .{ .err = ast.AstParseError.UnexpectedToken };
             },
-            TokenType.INT => {
-                return .{ .int = p.parseInteger() };
-            },
-            else => return .{ .err = ast.AstParseError.UnexpectedToken },
         }
+    }
+
+    pub inline fn parseExpressionFromPrefix(p: *Parser, precedence: TokenPrecedence) !ast.PrefixExpression {
+        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < @intFromEnum(p.peekPrecedent())) : (p.nextToken()) {}
+
+        switch (p.curToken.Type) {
+            TokenType.IDENT => return .{ .ident = p.parseIdentifier() },
+            TokenType.INT => return .{ .int = p.parseInteger() },
+            else => {
+                try p.noPrefixParaseFnError(p.curToken.Type);
+                return .{ .err = ast.AstParseError.UnexpectedToken };
+            },
+        }
+    }
+
+    pub inline fn parsePrefixExpression(p: *Parser) !ast.Prefix {
+        var prefix = ast.Prefix{ .Token = p.curToken, .Operator = p.curToken.Literal, .Right = undefined };
+        p.nextToken();
+        const right = try p.parseExpressionFromPrefix(TokenPrecedence.PREFIX);
+        prefix.Right = right;
+        return prefix;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -179,6 +201,11 @@ const Parser = struct {
         _ = p;
 
         return TokenPrecedence.LOWEST;
+    }
+
+    pub inline fn noPrefixParaseFnError(p: *Parser, t: TokenType) !void {
+        const msg = try std.fmt.allocPrint(p.allocator, "no prefix function for {}", .{t});
+        try p.errors.append(msg);
     }
 };
 
@@ -300,4 +327,41 @@ test "parse integer literal expression" {
     }
     try testing.expectEqual(program.Statements.items[0].expressionStatement.Token.Type, TokenType.INT);
     try testing.expectEqualStrings("5", program.Statements.items[0].expressionStatement.Exp.int.Value);
+}
+
+test "parse prefix expression" {
+    const testAlloc = testing.allocator;
+    const Test = struct {
+        input: []const u8,
+        prefix: []const u8,
+        right: []const u8,
+    };
+
+    const tests = [_]Test{
+        .{ .input = "!5;", .prefix = "!", .right = "5" },
+        .{ .input = "-15;", .prefix = "-", .right = "15" },
+    };
+
+    for (tests) |t| {
+        var l = lexer.Lexer.init(t.input);
+        var p = Parser.init(&l, testAlloc);
+        defer p.deinit();
+        var program = try p.parseProgram();
+        defer program.deinit();
+
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+
+        if (p.errors.items.len != 0) {
+            for (p.errors.items) |err| {
+                debug.print("error: {s}\n", .{err});
+            }
+        }
+
+        const operator = program.Statements.items[0].expressionStatement.Exp.prefix.Operator;
+        try testing.expectEqualStrings(t.prefix, operator);
+        const res = program.Statements.items[0].expressionStatement.Exp.prefix.Right.int.Value;
+        try testing.expectEqualStrings(t.right, res);
+    }
 }

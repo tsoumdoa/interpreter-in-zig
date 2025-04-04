@@ -2,16 +2,31 @@ const std = @import("std");
 const testing = std.testing;
 const ArrayList = std.ArrayList;
 const token = @import("token.zig");
+const parser = @import("parser.zig");
+
+const PrefixExpressionType = enum {
+    ident,
+    int,
+    err,
+};
+
+pub const PrefixExpression = union(PrefixExpressionType) {
+    ident: Identifier,
+    int: Integer,
+    err: AstParseError,
+};
 
 const ExpressionType = enum {
     ident,
     int,
+    prefix,
     err,
 };
 
 pub const Expression = union(ExpressionType) {
     ident: Identifier,
     int: Integer,
+    prefix: Prefix,
     err: AstParseError,
 };
 
@@ -42,7 +57,6 @@ pub const LetStatement = struct {
     Name: *Identifier,
     Value: *Identifier,
 
-    pub fn statementNode() void {}
     pub fn tokenLiteral(ls: *const LetStatement) []const u8 {
         return ls.Token.Literal;
     }
@@ -65,7 +79,6 @@ pub const ReturnStatement = struct {
     pub fn init(t: token.Token) ReturnStatement {
         return ReturnStatement{ .Token = t, .ReturnValue = undefined };
     }
-    pub fn statementNode() void {}
     pub fn tokenLiteral(rs: *const ReturnStatement) []const u8 {
         return rs.Token.Literal;
     }
@@ -86,7 +99,6 @@ pub const ExpressionStatement = struct {
     pub fn init(t: token.Token) ExpressionStatement {
         return ExpressionStatement{ .Token = t, .Exp = undefined };
     }
-    pub fn statementNode() void {}
     pub fn tokenLiteral(es: *const ExpressionStatement) []const u8 {
         return es.Token.Literal;
     }
@@ -108,11 +120,10 @@ pub const Identifier = struct {
     Token: token.Token,
     Value: []const u8,
 
-    pub fn expressionNode() void {}
-    pub fn tokenLiteral(i: *const Identifier) []const u8 {
+    pub inline fn tokenLiteral(i: *const Identifier) []const u8 {
         return i.Token.Literal;
     }
-    pub fn string(i: *const Identifier) []const u8 {
+    pub inline fn string(i: *const Identifier) []const u8 {
         return i.Value;
     }
 };
@@ -121,12 +132,32 @@ pub const Integer = struct {
     Token: token.Token,
     Value: []const u8,
 
-    pub fn expressionNode() void {}
-    pub fn tokenLiteral(i: *const Integer) []const u8 {
+    pub inline fn tokenLiteral(i: *const Integer) []const u8 {
         return i.Token.Literal;
     }
-    pub fn string(i: *const Integer) []const u8 {
+    pub inline fn string(i: *const Integer) []const u8 {
         return i.Value;
+    }
+};
+
+pub const Prefix = struct {
+    Token: token.Token,
+    Operator: []const u8,
+    Right: PrefixExpression,
+
+
+    pub inline fn tokenLiteral(i: *const Prefix) []const u8 {
+        return i.Token.Literal;
+    }
+    pub inline fn string(p: *const Prefix, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice("(");
+        try buffer.appendSlice(p.Operator);
+        switch (p.Right) {
+            else => |r| {
+                try buffer.appendSlice(r.Right.string());
+            },
+        }
+        try buffer.appendSlice(")");
     }
 };
 

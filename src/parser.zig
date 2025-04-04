@@ -18,8 +18,15 @@ pub const TokenPrecedence = enum(u8) {
     CALL,
 };
 
-const precedences = std.StaticStringMap(TokenPrecedence, .{
-    .{ .key = "==", .value = TokenPrecedence.EQ },
+const precedences = std.StaticStringMap(u8).initComptime(.{
+    .{ @tagName(TokenType.EQ), @intFromEnum(TokenPrecedence.EQUALS) },
+    .{ @tagName(TokenType.NOT_EQ), @intFromEnum(TokenPrecedence.EQUALS) },
+    .{ @tagName(TokenType.LT), @intFromEnum(TokenPrecedence.LESSGREATER) },
+    .{ @tagName(TokenType.GT), @intFromEnum(TokenPrecedence.LESSGREATER) },
+    .{ @tagName(TokenType.SUM), @intFromEnum(TokenPrecedence.SUM) },
+    .{ @tagName(TokenType.MINUS), @intFromEnum(TokenPrecedence.SUM) },
+    .{ @tagName(TokenType.SLASH), @intFromEnum(TokenPrecedence.PRODUCT) },
+    .{ @tagName(TokenType.PRODUCT), @intFromEnum(TokenPrecedence.PRODUCT) },
 });
 
 pub const Parser = struct {
@@ -83,7 +90,6 @@ pub const Parser = struct {
                 return .{ .returnStatement = try p.parseReturnStatement() };
             },
             else => {
-                // return .{ .err = ast.AstParseError.UnexpectedToken }; // TODO: implement error handling
                 return .{ .expressionStatement = try p.parseExpressionStatement() };
             },
         }
@@ -136,47 +142,130 @@ pub const Parser = struct {
     }
 
     pub inline fn parseExpression(p: *Parser, precedence: TokenPrecedence) !ast.Expression {
-        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < @intFromEnum(p.peekPrecedent())) : (p.nextToken()) {}
-
+        var leftExpression = ast.Expression{ .err = ast.AstParseError.UnexpectedToken };
         switch (p.curToken.Type) {
-            TokenType.IDENT => return .{ .ident = p.parseIdentifier() },
-            TokenType.INT => return .{ .int = p.parseInteger() },
-            TokenType.BANG => return .{ .prefix = try p.parsePrefixExpression() },
-            TokenType.MINUS => return .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
+            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
+            TokenType.BANG => leftExpression = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.MINUS => leftExpression = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.SUM => {},
+            TokenType.SLASH => {},
+            TokenType.PRODUCT => {},
+            TokenType.EQ => {},
+            TokenType.NOT_EQ => {},
+            TokenType.LT => {},
+            TokenType.GT => {},
             else => {
                 try p.noPrefixParaseFnError(p.curToken.Type);
-                return .{ .err = ast.AstParseError.UnexpectedToken };
             },
         }
+
+        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < p.peekPrecedence()) {
+            p.nextToken();
+            var infixExpression = ast.Expression{ .err = ast.AstParseError.UnexpectedToken };
+            switch (p.curToken.Type) {
+                TokenType.IDENT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.INT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.SUM => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.MINUS => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.SLASH => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.PRODUCT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.EQ => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.NOT_EQ => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.LT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.GT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                else => {
+                    try p.noPrefixParaseFnError(p.curToken.Type);
+                },
+            }
+
+            leftExpression = infixExpression;
+        }
+        return leftExpression;
     }
 
     pub inline fn parseExpressionFromPrefix(p: *Parser, precedence: TokenPrecedence) !ast.PrefixExpression {
-        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < @intFromEnum(p.peekPrecedent())) : (p.nextToken()) {}
-
+        _ = precedence;
+        var leftExpression = ast.PrefixExpression{ .err = ast.AstParseError.UnexpectedToken };
         switch (p.curToken.Type) {
-            TokenType.IDENT => return .{ .ident = p.parseIdentifier() },
-            TokenType.INT => return .{ .int = p.parseInteger() },
+            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
+            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
+            TokenType.BANG => {},
+            TokenType.MINUS => {},
+            TokenType.EQ => {},
+            TokenType.NOT_EQ => {},
+            TokenType.PRODUCT => {},
+            TokenType.SUM => {},
+            TokenType.SLASH => {},
+            TokenType.LT => {},
+            TokenType.GT => {},
+            TokenType.LPAREN => {},
+            TokenType.LBRACE => {},
             else => {
                 try p.noPrefixParaseFnError(p.curToken.Type);
-                return .{ .err = ast.AstParseError.UnexpectedToken };
             },
         }
+
+        return leftExpression;
+    }
+
+    pub inline fn parseExpressionFromInfix(p: *Parser, precedence: u8) !ast.PrefixExpression {
+        _ = precedence;
+        var leftExpression = ast.PrefixExpression{ .err = ast.AstParseError.UnexpectedToken };
+        switch (p.curToken.Type) {
+            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
+            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
+            TokenType.BANG => {},
+            TokenType.MINUS => {},
+            TokenType.EQ => {},
+            TokenType.NOT_EQ => {},
+            TokenType.PRODUCT => {},
+            TokenType.SUM => {},
+            TokenType.SLASH => {},
+            TokenType.LT => {},
+            TokenType.GT => {},
+            TokenType.LPAREN => {},
+            TokenType.LBRACE => {},
+            else => {
+                try p.noPrefixParaseFnError(p.curToken.Type);
+            },
+        }
+        return leftExpression;
     }
 
     pub inline fn parsePrefixExpression(p: *Parser) !ast.Prefix {
-        var prefix = ast.Prefix{ .Token = p.curToken, .Operator = p.curToken.Literal, .Right = undefined };
+        var prefix = ast.Prefix{
+            .Token = p.curToken,
+            .Operator = p.curToken.Literal,
+            .Right = undefined,
+        };
         p.nextToken();
         const right = try p.parseExpressionFromPrefix(TokenPrecedence.PREFIX);
         prefix.Right = right;
         return prefix;
     }
 
+    pub inline fn parseInfixExpression(p: *Parser, left: ast.Expression) !ast.Infix {
+        var infix = ast.Infix{
+            .Token = p.curToken,
+            .Operator = p.curToken.Literal,
+            .Left = &left,
+            .Right = undefined,
+        };
+        const precedence = p.curPrecedence();
+        p.nextToken();
+        const right = try p.parseExpressionFromInfix(precedence);
+        infix.Right = &right;
+        return infix;
+    }
+
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
         return ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
     }
 
-    pub inline fn parseInteger(p: *Parser) ast.Integer {
-        return ast.Integer{ .Token = p.curToken, .Value = p.curToken.Literal };
+    pub inline fn parseInteger(p: *Parser) !ast.Integer {
+        const parsed = try std.fmt.parseInt(i32, p.curToken.Literal, 10);
+        return ast.Integer{ .Token = p.curToken, .Value = parsed };
     }
 
     pub inline fn curTokenIs(p: *Parser, tokenType: TokenType) bool {
@@ -197,10 +286,18 @@ pub const Parser = struct {
         }
     }
 
-    pub inline fn peekPrecedent(p: *Parser) TokenPrecedence {
-        _ = p;
+    pub inline fn peekPrecedence(p: *Parser) u8 {
+        const peeked = precedences.get(@tagName(p.peekToken.Type));
+        if (peeked) |v| {
+            return v;
+        } else return @intFromEnum(TokenPrecedence.LOWEST);
+    }
 
-        return TokenPrecedence.LOWEST;
+    pub inline fn curPrecedence(p: *Parser) u8 {
+        const peeked = precedences.get(@tagName(p.curToken.Type));
+        if (peeked) |v| {
+            return v;
+        } else return @intFromEnum(TokenPrecedence.LOWEST);
     }
 
     pub inline fn noPrefixParaseFnError(p: *Parser, t: TokenType) !void {
@@ -282,6 +379,8 @@ test "parse return ``return` statement" {
 
     for (expectedIdentiefers, 0..) |expectedIdent, i| {
         const ident = program.Statements.items[i].returnStatement.ReturnValue;
+        const isReturn = program.Statements.items[i].returnStatement.tokenLiteral();
+        try testing.expectEqualStrings("return", isReturn);
         try testing.expectEqualStrings(expectedIdent, ident.Value);
     }
 }
@@ -326,7 +425,7 @@ test "parse integer literal expression" {
         debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
     }
     try testing.expectEqual(program.Statements.items[0].expressionStatement.Token.Type, TokenType.INT);
-    try testing.expectEqualStrings("5", program.Statements.items[0].expressionStatement.Exp.int.Value);
+    try testing.expectEqual(5, program.Statements.items[0].expressionStatement.Exp.int.Value);
 }
 
 test "parse prefix expression" {
@@ -334,12 +433,12 @@ test "parse prefix expression" {
     const Test = struct {
         input: []const u8,
         prefix: []const u8,
-        right: []const u8,
+        right: i32,
     };
 
     const tests = [_]Test{
-        .{ .input = "!5;", .prefix = "!", .right = "5" },
-        .{ .input = "-15;", .prefix = "-", .right = "15" },
+        .{ .input = "!5;", .prefix = "!", .right = 5 },
+        .{ .input = "-15;", .prefix = "-", .right = 15 },
     };
 
     for (tests) |t| {
@@ -362,6 +461,177 @@ test "parse prefix expression" {
         const operator = program.Statements.items[0].expressionStatement.Exp.prefix.Operator;
         try testing.expectEqualStrings(t.prefix, operator);
         const res = program.Statements.items[0].expressionStatement.Exp.prefix.Right.int.Value;
-        try testing.expectEqualStrings(t.right, res);
+        try testing.expectEqual(t.right, res);
+    }
+}
+
+test "parse inline expression" {
+    const testAlloc = testing.allocator;
+    const InfixTest = struct {
+        input: []const u8,
+        leftValue: i32,
+        operator: []const u8,
+        rightValue: i32,
+    };
+
+    const tests = [_]InfixTest{
+        .{
+            .input = "5 + 5;",
+            .leftValue = 5,
+            .operator = "+",
+            .rightValue = 5,
+        },
+        .{
+            .input = "5 - 5;",
+            .leftValue = 5,
+            .operator = "-",
+            .rightValue = 5,
+        },
+        .{
+            .input = "5 * 5;",
+            .leftValue = 5,
+            .operator = "*",
+            .rightValue = 5,
+        },
+        .{
+            .input = "5 / 5;",
+            .leftValue = 5,
+            .operator = "/",
+            .rightValue = 5,
+        },
+        .{
+            .input = "5 < 5;",
+            .leftValue = 5,
+            .operator = "<",
+            .rightValue = 5,
+        },
+        .{
+            .input = "5 > 5;",
+            .leftValue = 5,
+            .operator = ">",
+            .rightValue = 5,
+        },
+    };
+
+    for (tests) |t| {
+        var l = lexer.Lexer.init(t.input);
+        var p = Parser.init(&l, testAlloc);
+        defer p.deinit();
+        var program = try p.parseProgram();
+        defer program.deinit();
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+        if (p.errors.items.len != 0) {
+            for (p.errors.items) |err| {
+                debug.print("error: {s}\n", .{err});
+            }
+            debug.panic("parse error - check syntax", .{});
+        }
+        for (program.Statements.items) |stmt| {
+            const exp = stmt.expressionStatement.Exp;
+
+            switch (exp) {
+                .infix => |infix| {
+                    const left = infix.Left.*;
+                    switch (left) {
+                        .int => |int| {
+                            try testing.expectEqual(t.leftValue, int.Value);
+                        },
+                        else => {},
+                    }
+
+                    try testing.expectEqualStrings(t.operator, infix.Operator);
+
+                    const right = infix.Right.*;
+                    switch (right) {
+                        .int => |int| {
+                            try testing.expectEqual(t.rightValue, int.Value);
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+}
+
+test "operator precedence parsing" {
+    const testAlloc = testing.allocator;
+    const OperatorPreTest = struct {
+        input: []const u8,
+        expected: []const u8,
+    };
+
+    const tests = [_]OperatorPreTest{
+        // .{
+        //     .input = "-a * b;",
+        //     .expected = "((-a) * b)",
+        // },
+        // .{
+        //     .input = "!-a;",
+        //     .expected = "(!(-a))",
+        // },
+        .{
+            .input = "a + b + c;",
+            .expected = "((a + b) + c)",
+        },
+        // .{
+        //     .input = "a + b - c;",
+        //     .expected = "((a + b) - c)",
+        // },
+        // .{
+        //     .input = "a * b * c;",
+        //     .expected = "((a + b) - c)",
+        // },
+        // .{
+        //     .input = "a * b / c;",
+        //     .expected = "((a * b) / c)",
+        // },
+        // .{
+        //     .input = "a + b / c;",
+        //     .expected = "(a + (b / c))",
+        // },
+        // .{
+        //     .input = "a + b * c + d / e -f;",
+        //     .expected = "(((a + (b * c)) + (d / e)) - f)",
+        // },
+        // .{
+        //     .input = "3 + 4; -5 * 5",
+        //     .expected = "((3 + 4)((-5) * 5))",
+        // },
+        // .{
+        //     .input = "5 > 4 == 3 < 4",
+        //     .expected = "(((5 > 4) == (3 < 4)))",
+        // },
+        // .{
+        //     .input = "5 < 4 != 3 > 4",
+        //     .expected = "(((5 < 4) != (3 > 4)))",
+        // },
+        // .{
+        //     .input = "3 + 4 * 5 == 3 * 1 + 4 * 5",
+        //     .expected = "((((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))))",
+        // },
+    };
+
+    for (tests) |t| {
+        var l = lexer.Lexer.init(t.input);
+        var p = Parser.init(&l, testAlloc);
+        defer p.deinit();
+        var program = try p.parseProgram();
+        defer program.deinit();
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+        if (p.errors.items.len != 0) {
+            for (p.errors.items) |err| {
+                debug.print("error: {s}\n", .{err});
+            }
+            debug.panic("parse error - check syntax", .{});
+        }
+        const actual = try program.string();
+        defer actual.deinit();
+        try testing.expectEqualStrings(t.expected, actual.items);
     }
 }

@@ -9,11 +9,11 @@ pub const TokenType = enum {
     INT,
 
     ASSIGN,
-    PLUS,
+    SUM, //+
+    PRODUCT, //*
 
     MINUS,
     BANG,
-    ASTERISK,
     SLASH,
 
     LT, // <

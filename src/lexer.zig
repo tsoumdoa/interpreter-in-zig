@@ -85,9 +85,9 @@ pub const Lexer = struct {
                         tok = .{ .Type = TokenType.BANG, .Literal = "!" };
                     }
                 },
-                '*' => {
-                    tok = .{ .Type = TokenType.ASTERISK, .Literal = "*" };
-                },
+                // '*' => {
+                //     tok = .{ .Type = TokenType.ASTERISK, .Literal = "*" };
+                // },
                 '/' => {
                     tok = .{ .Type = TokenType.SLASH, .Literal = "/" };
                 },
@@ -110,7 +110,10 @@ pub const Lexer = struct {
                     tok = .{ .Type = TokenType.COMMA, .Literal = "," };
                 },
                 '+' => {
-                    tok = .{ .Type = TokenType.PLUS, .Literal = "+" };
+                    tok = .{ .Type = TokenType.SUM, .Literal = "+" };
+                },
+                '*' => {
+                    tok = .{ .Type = TokenType.PRODUCT, .Literal = "*" };
                 },
                 '{' => {
                     tok = .{ .Type = TokenType.LBRACE, .Literal = "{" };
@@ -164,7 +167,7 @@ test "test nextToken (=+(){},;)" {
 
     const expectedTokens = [_]token.Token{
         .{ .Type = TokenType.ASSIGN, .Literal = "=" },
-        .{ .Type = TokenType.PLUS, .Literal = "+" },
+        .{ .Type = TokenType.SUM, .Literal = "+" },
         .{ .Type = TokenType.LPAREN, .Literal = "(" },
         .{ .Type = TokenType.RPAREN, .Literal = ")" },
         .{ .Type = TokenType.LBRACE, .Literal = "{" },
@@ -227,7 +230,7 @@ test "test extended token" {
         .{ .Type = TokenType.RPAREN, .Literal = ")" },
         .{ .Type = TokenType.LBRACE, .Literal = "{" },
         .{ .Type = TokenType.IDENT, .Literal = "x" },
-        .{ .Type = TokenType.PLUS, .Literal = "+" },
+        .{ .Type = TokenType.SUM, .Literal = "+" },
         .{ .Type = TokenType.IDENT, .Literal = "y" },
         .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
         .{ .Type = TokenType.RBRACE, .Literal = "}" },
@@ -245,7 +248,7 @@ test "test extended token" {
         .{ .Type = TokenType.BANG, .Literal = "!" },
         .{ .Type = TokenType.MINUS, .Literal = "-" },
         .{ .Type = TokenType.SLASH, .Literal = "/" },
-        .{ .Type = TokenType.ASTERISK, .Literal = "*" },
+        .{ .Type = TokenType.PRODUCT, .Literal = "*" },
         .{ .Type = TokenType.INT, .Literal = "5" },
         .{ .Type = TokenType.SEMICOLON, .Literal = ";" },
         .{ .Type = TokenType.INT, .Literal = "5" },

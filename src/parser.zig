@@ -18,6 +18,10 @@ const TokenPrecedence = enum(u8) {
     CALL,
 };
 
+const precedences = std.StaticStringMap(TokenPrecedence, .{
+    .{ .key = "==", .value = TokenPrecedence.EQ },
+});
+
 const Parser = struct {
     lexer: *lexer.Lexer,
     curToken: token.Token = undefined,
@@ -58,7 +62,6 @@ const Parser = struct {
         var program = ast.Program.init(p.allocator);
         while (p.curToken.Type != TokenType.EOF) : (p.nextToken()) {
             const stmt = try p.parseStatement();
-
             switch (stmt) {
                 .err => |err| {
                     _ = err;
@@ -79,11 +82,9 @@ const Parser = struct {
             TokenType.RETURN => {
                 return .{ .returnStatement = try p.parseReturnStatement() };
             },
-            TokenType.IDENT => {
-                return .{ .expressionStatement = try p.parseExpressionStatement() };
-            },
             else => {
-                return .{ .err = ast.AstParseError.UnexpectedToken };
+                // return .{ .err = ast.AstParseError.UnexpectedToken }; // TODO: implement error handling
+                return .{ .expressionStatement = try p.parseExpressionStatement() };
             },
         }
     }
@@ -108,29 +109,20 @@ const Parser = struct {
         };
         _ = isAssign;
 
-        while (p.curTokenIs(TokenType.SEMICOLON)) : (p.nextToken()) {}
+        while (!p.curTokenIs(TokenType.SEMICOLON)) : (p.nextToken()) {}
 
         return stmt;
     }
 
     pub inline fn parseReturnStatement(p: *Parser) !ast.ReturnStatement {
         var stmt = ast.ReturnStatement.init(p.curToken);
-
-        const isIdent = p.expectPeek(TokenType.IDENT) catch {
-            return error.ParseError;
-        };
-        _ = isIdent;
-
-        const isAssign = p.expectPeek(TokenType.ASSIGN) catch {
-            return error.ParseError;
-        };
-        _ = isAssign;
-
-        while (p.curTokenIs(TokenType.SEMICOLON)) : (p.nextToken()) {}
+        p.nextToken();
 
         const identPtr = try p.allocator.create(ast.Identifier);
-        identPtr.* = ast.Identifier{ .Token = p.peekToken, .Value = p.peekToken.Literal };
+        identPtr.* = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
         stmt.ReturnValue = identPtr;
+
+        while (!p.curTokenIs(TokenType.SEMICOLON)) : (p.nextToken()) {}
 
         return stmt;
     }
@@ -139,38 +131,41 @@ const Parser = struct {
         var stmt = ast.ExpressionStatement.init(p.curToken);
         const expr = try p.parseExpression(TokenPrecedence.LOWEST);
         stmt.Exp = expr;
-        if (p.peekTokenIs(TokenType.SEMICOLON)) {
-            p.nextToken();
-        }
+        while (!p.curTokenIs(TokenType.SEMICOLON)) : (p.nextToken()) {}
         return stmt;
     }
 
     pub inline fn parseExpression(p: *Parser, precedence: TokenPrecedence) !ast.Expression {
-        _ = precedence;
+        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < @intFromEnum(p.peekPrecedent())) : (p.nextToken()) {}
+
         switch (p.curToken.Type) {
             TokenType.IDENT => {
                 return .{ .ident = p.parseIdentifier() };
+            },
+            TokenType.INT => {
+                return .{ .int = p.parseInteger() };
             },
             else => return .{ .err = ast.AstParseError.UnexpectedToken },
         }
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
-        return ast.Identifier{
-            .Token = p.curToken,
-            .Value = p.curToken.Literal,
-        };
+        return ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
     }
 
-    pub fn curTokenIs(p: *Parser, tokenType: TokenType) bool {
+    pub inline fn parseInteger(p: *Parser) ast.Integer {
+        return ast.Integer{ .Token = p.curToken, .Value = p.curToken.Literal };
+    }
+
+    pub inline fn curTokenIs(p: *Parser, tokenType: TokenType) bool {
         return p.curToken.Type == tokenType;
     }
 
-    pub fn peekTokenIs(p: *Parser, tokenType: TokenType) bool {
+    pub inline fn peekTokenIs(p: *Parser, tokenType: TokenType) bool {
         return p.peekToken.Type == tokenType;
     }
 
-    pub fn expectPeek(p: *Parser, tokenType: TokenType) !bool {
+    pub inline fn expectPeek(p: *Parser, tokenType: TokenType) !bool {
         if (p.peekTokenIs(tokenType)) {
             p.nextToken();
             return true;
@@ -180,8 +175,11 @@ const Parser = struct {
         }
     }
 
-    // pub inline fn prefixParseFns(p: *Parser, tokenType: TokenType) *void {
-    // }
+    pub inline fn peekPrecedent(p: *Parser) TokenPrecedence {
+        _ = p;
+
+        return TokenPrecedence.LOWEST;
+    }
 };
 
 test "parse let statement" {
@@ -281,6 +279,25 @@ test "parse itentifer expression" {
         debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
     }
 
+    var testArrayBuffer = ArrayList(u8).init(testAlloc);
+    defer testArrayBuffer.deinit();
     try testing.expectEqual(program.Statements.items[0].expressionStatement.Token.Type, TokenType.IDENT);
-    try testing.expectEqualStrings("foobar", program.Statements.items[0].expressionStatement.Exp.ident.Value);
+    try program.Statements.items[0].expressionStatement.string(&testArrayBuffer);
+    try testing.expectEqualStrings("foobar", testArrayBuffer.items);
+}
+
+test "parse integer literal expression" {
+    const testAlloc = testing.allocator;
+    const input = "5;";
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+    try testing.expectEqual(program.Statements.items[0].expressionStatement.Token.Type, TokenType.INT);
+    try testing.expectEqualStrings("5", program.Statements.items[0].expressionStatement.Exp.int.Value);
 }

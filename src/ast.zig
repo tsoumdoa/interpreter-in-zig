@@ -3,32 +3,15 @@ const testing = std.testing;
 const ArrayList = std.ArrayList;
 const token = @import("token.zig");
 
-// pub const Node = struct {
-//     pub fn tokenLiteal() []const u8 {}
-// };
-
-// pub const Expression = struct {
-//     // Node: Node,
-//
-//     pub fn init() Expression {
-//         return Expression{};
-//     }
-//
-//     pub fn expressionNode() void {}
-//     pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
-//         _ = e;
-//         try buffer.appendSlice("expression");
-//     }
-// };
-
-// implmenet ExpressionType and Expression tagged union
 const ExpressionType = enum {
     ident,
+    int,
     err,
 };
 
 pub const Expression = union(ExpressionType) {
     ident: Identifier,
+    int: Integer,
     err: AstParseError,
 };
 
@@ -107,9 +90,18 @@ pub const ExpressionStatement = struct {
     pub fn tokenLiteral(es: *const ExpressionStatement) []const u8 {
         return es.Token.Literal;
     }
-    // pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
-    //     try es.Exp.string(buffer);
-    // }
+
+    pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
+        switch (es.Exp) {
+            .ident => |ident| {
+                try buffer.appendSlice(ident.Value);
+            },
+            .int => |int| {
+                try buffer.appendSlice(int.Value);
+            },
+            else => {},
+        }
+    }
 };
 
 pub const Identifier = struct {
@@ -121,6 +113,19 @@ pub const Identifier = struct {
         return i.Token.Literal;
     }
     pub fn string(i: *const Identifier) []const u8 {
+        return i.Value;
+    }
+};
+
+pub const Integer = struct {
+    Token: token.Token,
+    Value: []const u8,
+
+    pub fn expressionNode() void {}
+    pub fn tokenLiteral(i: *const Integer) []const u8 {
+        return i.Token.Literal;
+    }
+    pub fn string(i: *const Integer) []const u8 {
         return i.Value;
     }
 };
@@ -175,9 +180,9 @@ pub const Program = struct {
                 .returnStatement => |ret_stmt| {
                     try ret_stmt.string(&buffer);
                 },
-                // .expressionStatement => |exp_stmt| {
-                // try exp_stmt.string(&buffer);
-                // },
+                .expressionStatement => |exp_stmt| {
+                    try exp_stmt.string(&buffer);
+                },
                 .err => |_| {},
                 else => {},
             }

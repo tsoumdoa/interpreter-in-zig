@@ -1,35 +1,10 @@
 const std = @import("std");
+const debug = std.debug;
 const testing = std.testing;
 const ArrayList = std.ArrayList;
 const token = @import("token.zig");
 const parser = @import("parser.zig");
 const String = @import("string").String;
-
-const InfixExpressionType = enum {
-    ident,
-    int,
-    prefix,
-    err,
-};
-
-pub const InfixExpression = union(InfixExpressionType) {
-    ident: Identifier,
-    int: Integer,
-    prefix: Prefix,
-    err: AstParseError,
-};
-
-const PrefixExpressionType = enum {
-    ident,
-    int,
-    err,
-};
-
-pub const PrefixExpression = union(PrefixExpressionType) {
-    ident: Identifier,
-    int: Integer,
-    err: AstParseError,
-};
 
 const ExpressionType = enum {
     ident,
@@ -39,6 +14,15 @@ const ExpressionType = enum {
     err,
 };
 
+const ParseError = error{
+    ParseError,
+    ParseStringError,
+    UnexpectedToken,
+    InvalidSyntax,
+    OutOfMemory,
+    NoSpaceLeft,
+};
+
 pub const Expression = union(ExpressionType) {
     ident: Identifier,
     int: Integer,
@@ -46,7 +30,8 @@ pub const Expression = union(ExpressionType) {
     infix: Infix,
     err: AstParseError,
 
-    pub fn string(e: *const Expression, buffer: *ArrayList(u8)) !void {
+    // inline is not option due to recursive call from infix expression
+    pub fn string(e: *const Expression, buffer: *ArrayList(u8)) ParseError!void {
         switch (e.*) {
             .ident => |ident| {
                 try buffer.appendSlice(ident.string());
@@ -57,15 +42,11 @@ pub const Expression = union(ExpressionType) {
             .prefix => |prefix| {
                 try prefix.string(buffer);
             },
-            //todo fix this
-            // .infix => |infix| {
-            //     try infix.string(buffer);
-            // },
-            .err => |_| {
-                std.debug.panic("Infix.Left.err", .{});
+            .infix => |infix| {
+                try infix.string(buffer);
             },
-            else => |el| {
-                std.debug.print("Infix.Left.err: {any}", .{el});
+            .err => |_| {
+                return error.ParseError;
             },
         }
     }
@@ -150,14 +131,13 @@ pub const ExpressionStatement = struct {
                 try buffer.appendSlice(ident.Value);
             },
             .int => |int| {
-                var buf: [12]u8 = undefined;
-                const bytes = try std.fmt.bufPrint(&buf, "{}", .{int.Value});
-                try buffer.appendSlice(bytes);
+                try int.string(buffer);
             },
             .infix => |infix| {
                 try infix.string(buffer);
             },
             .prefix => |prefix| {
+                // _ = prefix;
                 try prefix.string(buffer);
             },
             else => {},
@@ -194,7 +174,7 @@ pub const Integer = struct {
 pub const Prefix = struct {
     Token: token.Token,
     Operator: []const u8,
-    Right: PrefixExpression,
+    Right: *const Expression,
 
     pub inline fn tokenLiteral(p: *const Prefix) []const u8 {
         return p.Token.Literal;
@@ -202,11 +182,8 @@ pub const Prefix = struct {
     pub inline fn string(p: *const Prefix, buffer: *ArrayList(u8)) !void {
         try buffer.appendSlice("(");
         try buffer.appendSlice(p.Operator);
-        switch (p.Right) {
-            .ident => try buffer.appendSlice(p.Right.ident.string()),
-            .int => try p.Right.int.string(buffer),
-            else => {},
-        }
+        const right = p.Right.*;
+        try right.string(buffer);
         try buffer.appendSlice(")");
     }
 };
@@ -215,24 +192,20 @@ pub const Infix = struct {
     Token: token.Token,
     Left: *const Expression,
     Operator: []const u8,
-    Right: *const PrefixExpression,
+    Right: *const Expression,
 
     pub inline fn tokenLiteral(i: *const Infix) []const u8 {
         return i.Token.Literal;
     }
-    pub fn string(i: *const Infix, buffer: *ArrayList(u8)) !void {
+    pub inline fn string(i: *const Infix, buffer: *ArrayList(u8)) !void {
         try buffer.appendSlice("(");
-        try i.Left.*.string(buffer);
+        const left = i.Left.*;
+        try left.string(buffer);
         try buffer.appendSlice(" ");
         try buffer.appendSlice(i.Operator);
         try buffer.appendSlice(" ");
-        switch (i.Right.*) {
-            .ident => |ident| {
-                try buffer.appendSlice(ident.string());
-            },
-            .int => try i.Right.int.string(buffer),
-            else => {},
-        }
+        const right = i.Right.*;
+        try right.string(buffer);
         try buffer.appendSlice(")");
     }
 };
@@ -296,7 +269,6 @@ pub const Program = struct {
                     try buffer.appendSlice(ident);
                 },
                 .err => |_| {},
-                // else => {},
             }
         }
         return &buffer;
@@ -310,29 +282,29 @@ pub const Program = struct {
     }
 };
 
-// test "test return value of string fn" {
-//     const allocator = testing.allocator;
-//     var p = Program.init(allocator);
-//     defer p.Statements.deinit();
-//
-//     const t = token.Token{ .Type = token.TokenType.LET, .Literal = "let" };
-//     var nameIden = Identifier{
-//         .Token = token.Token{ .Type = token.TokenType.IDENT, .Literal = "myVar" },
-//         .Value = "myVar",
-//     };
-//     var valueIden = Identifier{
-//         .Token = token.Token{ .Type = token.TokenType.IDENT, .Literal = "anotherVar" },
-//         .Value = "anotherVar",
-//     };
-//     var lstm = Statement{ .letStatement = LetStatement{
-//         .Token = t,
-//         .Name = &nameIden,
-//         .Value = &valueIden,
-//     } };
-//     try p.Statements.append(&lstm);
-//
-//     const expected = "let myVar = anotherVar;";
-//     const b = try p.string();
-//     defer b.deinit();
-//     try testing.expectEqualStrings(expected, b.items);
-// }
+test "test return value of string fn" {
+    const allocator = testing.allocator;
+    var p = Program.init(allocator);
+    defer p.Statements.deinit();
+
+    const t = token.Token{ .Type = token.TokenType.LET, .Literal = "let" };
+    var nameIden = Identifier{
+        .Token = token.Token{ .Type = token.TokenType.IDENT, .Literal = "myVar" },
+        .Value = "myVar",
+    };
+    var valueIden = Identifier{
+        .Token = token.Token{ .Type = token.TokenType.IDENT, .Literal = "anotherVar" },
+        .Value = "anotherVar",
+    };
+    var lstm = Statement{ .letStatement = LetStatement{
+        .Token = t,
+        .Name = &nameIden,
+        .Value = &valueIden,
+    } };
+    try p.Statements.append(&lstm);
+
+    const expected = "let myVar = anotherVar;";
+    const b = try p.string();
+    defer b.deinit();
+    try testing.expectEqualStrings(expected, b.items);
+}

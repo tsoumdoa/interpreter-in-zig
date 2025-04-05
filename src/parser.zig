@@ -8,6 +8,16 @@ const testing = std.testing;
 const assert = debug.assert;
 const ArrayList = std.ArrayList;
 
+const parseError = error{
+    ParseError,
+    UnexpectedToken,
+    InvalidSyntax,
+    Overflow,
+    InvalidCharacter,
+    OutOfMemory,
+    // ... other errors
+};
+
 pub const TokenPrecedence = enum(u8) {
     LOWEST = 1,
     EQUALS,
@@ -35,12 +45,14 @@ pub const Parser = struct {
     peekToken: token.Token = undefined,
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
+    expressions: ArrayList(*ast.Expression),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
             .lexer = l,
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
+            .expressions = ArrayList(*ast.Expression).init(allocator),
         };
 
         p.nextToken();
@@ -53,6 +65,10 @@ pub const Parser = struct {
             p.allocator.free(err);
         }
         p.errors.deinit();
+        for (p.expressions.items) |expr| {
+            p.allocator.destroy(expr);
+        }
+        p.expressions.deinit();
     }
 
     pub fn nextToken(p: *Parser) void {
@@ -141,13 +157,14 @@ pub const Parser = struct {
         return stmt;
     }
 
-    pub inline fn parseExpression(p: *Parser, precedence: TokenPrecedence) !ast.Expression {
-        var leftExpression = ast.Expression{ .err = ast.AstParseError.UnexpectedToken };
+    pub fn parseExpression(p: *Parser, precedence: TokenPrecedence) parseError!ast.Expression {
+        var leftExpression = try p.allocator.create(ast.Expression);
+        try p.expressions.append(leftExpression);
         switch (p.curToken.Type) {
-            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
-            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
-            TokenType.BANG => leftExpression = .{ .prefix = try p.parsePrefixExpression() },
-            TokenType.MINUS => leftExpression = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.IDENT => leftExpression.* = .{ .ident = p.parseIdentifier() },
+            TokenType.INT => leftExpression.* = .{ .int = try p.parseInteger() },
+            TokenType.BANG => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.MINUS => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
             TokenType.SUM => {},
             TokenType.SLASH => {},
             TokenType.PRODUCT => {},
@@ -162,18 +179,20 @@ pub const Parser = struct {
 
         while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < p.peekPrecedence()) {
             p.nextToken();
-            var infixExpression = ast.Expression{ .err = ast.AstParseError.UnexpectedToken };
+            const infixExpression = try p.allocator.create(ast.Expression);
+            try p.expressions.append(infixExpression);
+            // var infixExpression = ast.Expression{ .err = ast.AstParseError.UnexpectedToken };
             switch (p.curToken.Type) {
-                TokenType.IDENT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.INT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.SUM => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.MINUS => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.SLASH => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.PRODUCT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.EQ => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.NOT_EQ => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.LT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
-                TokenType.GT => infixExpression = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.IDENT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.INT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.SUM => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.MINUS => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.SLASH => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.PRODUCT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.EQ => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.NOT_EQ => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.LT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.GT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
                 else => {
                     try p.noPrefixParaseFnError(p.curToken.Type);
                 },
@@ -181,56 +200,7 @@ pub const Parser = struct {
 
             leftExpression = infixExpression;
         }
-        return leftExpression;
-    }
-
-    pub inline fn parseExpressionFromPrefix(p: *Parser, precedence: TokenPrecedence) !ast.PrefixExpression {
-        _ = precedence;
-        var leftExpression = ast.PrefixExpression{ .err = ast.AstParseError.UnexpectedToken };
-        switch (p.curToken.Type) {
-            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
-            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
-            TokenType.BANG => {},
-            TokenType.MINUS => {},
-            TokenType.EQ => {},
-            TokenType.NOT_EQ => {},
-            TokenType.PRODUCT => {},
-            TokenType.SUM => {},
-            TokenType.SLASH => {},
-            TokenType.LT => {},
-            TokenType.GT => {},
-            TokenType.LPAREN => {},
-            TokenType.LBRACE => {},
-            else => {
-                try p.noPrefixParaseFnError(p.curToken.Type);
-            },
-        }
-
-        return leftExpression;
-    }
-
-    pub inline fn parseExpressionFromInfix(p: *Parser, precedence: u8) !ast.PrefixExpression {
-        _ = precedence;
-        var leftExpression = ast.PrefixExpression{ .err = ast.AstParseError.UnexpectedToken };
-        switch (p.curToken.Type) {
-            TokenType.IDENT => leftExpression = .{ .ident = p.parseIdentifier() },
-            TokenType.INT => leftExpression = .{ .int = try p.parseInteger() },
-            TokenType.BANG => {},
-            TokenType.MINUS => {},
-            TokenType.EQ => {},
-            TokenType.NOT_EQ => {},
-            TokenType.PRODUCT => {},
-            TokenType.SUM => {},
-            TokenType.SLASH => {},
-            TokenType.LT => {},
-            TokenType.GT => {},
-            TokenType.LPAREN => {},
-            TokenType.LBRACE => {},
-            else => {
-                try p.noPrefixParaseFnError(p.curToken.Type);
-            },
-        }
-        return leftExpression;
+        return leftExpression.*;
     }
 
     pub inline fn parsePrefixExpression(p: *Parser) !ast.Prefix {
@@ -240,22 +210,29 @@ pub const Parser = struct {
             .Right = undefined,
         };
         p.nextToken();
-        const right = try p.parseExpressionFromPrefix(TokenPrecedence.PREFIX);
+        const right = try p.allocator.create(ast.Expression);
+        right.* = try p.parseExpression(TokenPrecedence.PREFIX);
+        try p.expressions.append(right);
         prefix.Right = right;
         return prefix;
     }
 
-    pub inline fn parseInfixExpression(p: *Parser, left: ast.Expression) !ast.Infix {
+    pub inline fn parseInfixExpression(p: *Parser, left: *ast.Expression) !ast.Infix {
+        // const leftNew = try p.allocator.create(ast.Expression);
+        // leftNew.* = left.*;
+
         var infix = ast.Infix{
             .Token = p.curToken,
             .Operator = p.curToken.Literal,
-            .Left = &left,
+            .Left = left,
             .Right = undefined,
         };
         const precedence = p.curPrecedence();
         p.nextToken();
-        const right = try p.parseExpressionFromInfix(precedence);
-        infix.Right = &right;
+        const right = try p.allocator.create(ast.Expression);
+        right.* = try p.parseExpression(@as(TokenPrecedence, @enumFromInt(precedence)));
+        try p.expressions.append(right);
+        infix.Right = right;
         return infix;
     }
 
@@ -565,54 +542,54 @@ test "operator precedence parsing" {
     };
 
     const tests = [_]OperatorPreTest{
-        // .{
-        //     .input = "-a * b;",
-        //     .expected = "((-a) * b)",
-        // },
-        // .{
-        //     .input = "!-a;",
-        //     .expected = "(!(-a))",
-        // },
+        .{
+            .input = "-a * b;",
+            .expected = "((-a) * b)",
+        },
+        .{
+            .input = "!-a;",
+            .expected = "(!(-a))",
+        },
         .{
             .input = "a + b + c;",
             .expected = "((a + b) + c)",
         },
-        // .{
-        //     .input = "a + b - c;",
-        //     .expected = "((a + b) - c)",
-        // },
-        // .{
-        //     .input = "a * b * c;",
-        //     .expected = "((a + b) - c)",
-        // },
-        // .{
-        //     .input = "a * b / c;",
-        //     .expected = "((a * b) / c)",
-        // },
-        // .{
-        //     .input = "a + b / c;",
-        //     .expected = "(a + (b / c))",
-        // },
-        // .{
-        //     .input = "a + b * c + d / e -f;",
-        //     .expected = "(((a + (b * c)) + (d / e)) - f)",
-        // },
-        // .{
-        //     .input = "3 + 4; -5 * 5",
-        //     .expected = "((3 + 4)((-5) * 5))",
-        // },
-        // .{
-        //     .input = "5 > 4 == 3 < 4",
-        //     .expected = "(((5 > 4) == (3 < 4)))",
-        // },
-        // .{
-        //     .input = "5 < 4 != 3 > 4",
-        //     .expected = "(((5 < 4) != (3 > 4)))",
-        // },
-        // .{
-        //     .input = "3 + 4 * 5 == 3 * 1 + 4 * 5",
-        //     .expected = "((((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))))",
-        // },
+        .{
+            .input = "a + b - c;",
+            .expected = "((a + b) - c)",
+        },
+        .{
+            .input = "a * b * c;",
+            .expected = "((a * b) * c)",
+        },
+        .{
+            .input = "a * b / c;",
+            .expected = "((a * b) / c)",
+        },
+        .{
+            .input = "a + b / c;",
+            .expected = "(a + (b / c))",
+        },
+        .{
+            .input = "a + b * c + d / e -f;",
+            .expected = "(((a + (b * c)) + (d / e)) - f)",
+        },
+        .{
+            .input = "3 + 4-5 * 5;",
+            .expected = "((3 + 4) - (5 * 5))",
+        },
+        .{
+            .input = "5 > 4 == 3 < 4;",
+            .expected = "((5 > 4) == (3 < 4))",
+        },
+        .{
+            .input = "5 < 4 != 3 > 4;",
+            .expected = "((5 < 4) != (3 > 4))",
+        },
+        .{
+            .input = "3 + 4 * 5 == 3 * 1 + 4 * 5;",
+            .expected = "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+        },
     };
 
     for (tests) |t| {

@@ -11,6 +11,7 @@ const ExpressionType = enum {
     int,
     prefix,
     infix,
+    boolean,
     err,
 };
 
@@ -28,6 +29,7 @@ pub const Expression = union(ExpressionType) {
     int: Integer,
     prefix: Prefix,
     infix: Infix,
+    boolean: Boolean,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -44,6 +46,9 @@ pub const Expression = union(ExpressionType) {
             },
             .infix => |infix| {
                 try infix.string(buffer);
+            },
+            .boolean => |boolean| {
+                try boolean.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -140,6 +145,9 @@ pub const ExpressionStatement = struct {
                 // _ = prefix;
                 try prefix.string(buffer);
             },
+            .boolean => |boolean| {
+                try boolean.string(buffer);
+            },
             else => {},
         }
     }
@@ -207,6 +215,18 @@ pub const Infix = struct {
         const right = i.Right.*;
         try right.string(buffer);
         try buffer.appendSlice(")");
+    }
+};
+
+pub const Boolean = struct {
+    Token: token.Token,
+    Value: bool,
+
+    pub inline fn tokenLiteral(b: *const Boolean) []const u8 {
+        return b.Token.Literal;
+    }
+    pub inline fn string(b: *const Boolean, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(b.tokenLiteral());
     }
 };
 

@@ -417,7 +417,7 @@ test "parse integer literal expression" {
     try testing.expectEqual(5, program.Statements.items[0].expressionStatement.Exp.int.Value);
 }
 
-test "parse boolean expression" {
+test "parse boolean expression 1" {
     const testAlloc = testing.allocator;
     const Test = struct {
         input: []const u8,
@@ -581,6 +581,130 @@ test "parse inline expression" {
     }
 }
 
+test "parse boolean expression 3" {
+    const testAlloc = testing.allocator;
+    const InfixTest = struct {
+        input: []const u8,
+        operator: []const u8,
+        value: bool,
+    };
+
+    const tests = [_]InfixTest{
+        .{
+            .input = "!true;",
+            .operator = "!",
+            .value = true,
+        },
+        .{
+            .input = "!false;",
+            .operator = "!",
+            .value = false,
+        },
+    };
+
+    for (tests) |t| {
+        var l = lexer.Lexer.init(t.input);
+        var p = Parser.init(&l, testAlloc);
+        defer p.deinit();
+        var program = try p.parseProgram();
+        defer program.deinit();
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+        if (p.errors.items.len != 0) {
+            for (p.errors.items) |err| {
+                debug.print("error: {s}\n", .{err});
+            }
+            debug.panic("parse error - check syntax", .{});
+        }
+        for (program.Statements.items) |stmt| {
+            const exp = stmt.expressionStatement.Exp;
+
+            switch (exp) {
+                .prefix => |infix| {
+                    try testing.expectEqualStrings(t.operator, infix.Operator);
+                    try testing.expectEqual(t.value, infix.Right.boolean.Value);
+                },
+                else => {},
+            }
+        }
+    }
+}
+
+test "parse boolean expression 2" {
+    const testAlloc = testing.allocator;
+    const InfixTest = struct {
+        input: []const u8,
+        leftValue: bool,
+        operator: []const u8,
+        rightValue: bool,
+    };
+
+    const tests = [_]InfixTest{
+        .{
+            .input = "true == true;",
+            .leftValue = true,
+            .operator = "==",
+            .rightValue = true,
+        },
+        .{
+            .input = "true != false;",
+            .leftValue = true,
+            .operator = "!=",
+            .rightValue = false,
+        },
+        .{
+            .input = "false == false;",
+            .leftValue = false,
+            .operator = "==",
+            .rightValue = false,
+        },
+    };
+
+    for (tests) |t| {
+        var l = lexer.Lexer.init(t.input);
+        var p = Parser.init(&l, testAlloc);
+        defer p.deinit();
+        var program = try p.parseProgram();
+        defer program.deinit();
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+        if (p.errors.items.len != 0) {
+            for (p.errors.items) |err| {
+                debug.print("error: {s}\n", .{err});
+            }
+            debug.panic("parse error - check syntax", .{});
+        }
+        for (program.Statements.items) |stmt| {
+            const exp = stmt.expressionStatement.Exp;
+
+            switch (exp) {
+                .infix => |infix| {
+                    const left = infix.Left.*;
+                    switch (left) {
+                        .boolean => |b| {
+                            try testing.expectEqual(t.leftValue, b.Value);
+                        },
+                        else => {},
+                    }
+
+                    try testing.expectEqualStrings(t.operator, infix.Operator);
+
+                    const right = infix.Right.*;
+                    switch (right) {
+                        .boolean => |b| {
+                            try testing.expectEqual(t.rightValue, b.Value);
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+}
+
 test "operator precedence parsing" {
     const testAlloc = testing.allocator;
     const OperatorPreTest = struct {
@@ -636,6 +760,22 @@ test "operator precedence parsing" {
         .{
             .input = "3 + 4 * 5 == 3 * 1 + 4 * 5;",
             .expected = "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+        },
+        .{
+            .input = "true",
+            .expected = "true",
+        },
+        .{
+            .input = "false",
+            .expected = "false",
+        },
+        .{
+            .input = "3 < 5 == false;",
+            .expected = "((3 < 5) == false)",
+        },
+        .{
+            .input = "3 < 5 == true;",
+            .expected = "((3 < 5) == true)",
         },
     };
 

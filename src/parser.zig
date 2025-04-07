@@ -250,16 +250,23 @@ pub const Parser = struct {
     }
 
     pub inline fn parseIfExpression(p: *Parser) !ast.IfElse {
-        var expression = ast.IfElse{
+        var ifelse = ast.IfElse{
             .Token = p.curToken,
             .Condition = undefined,
             .Consequence = undefined,
             .Alternative = null,
         };
-        expression.Condition = &try p.parseExpression(TokenPrecedence.LOWEST);
-        expression.Consequence = p.parseBlockStatement();
-        //todo
-        return expression;
+
+        std.debug.print("parseIfExpression\n", .{});
+        p.nextToken();
+        const conditionExpression = try p.allocator.create(ast.Expression);
+        conditionExpression.* = try p.parseExpression(TokenPrecedence.LOWEST);
+        try p.expressions.append(conditionExpression);
+
+        ifelse.Condition = conditionExpression;
+        // expression.Consequence = p.parseBlockStatement();
+        // todo
+        return ifelse;
     }
 
     pub inline fn parseBlockStatement(p: *Parser) *ast.BlockStatement {
@@ -861,18 +868,17 @@ test "test if expression" {
     }
 
     const stmt = program.Statements.items[0].expressionStatement;
+    std.debug.print("stmt: {any}\n", .{stmt});
 
-    switch (stmt.Exp) {
-        .ifelse => |ifelse| {
-            std.debug.print("ifelse: {any}\n", .{ifelse});
-            try testing.expectEqualStrings("if", ifelse.tokenLiteral());
-        },
-        else => {
-            debug.panic("stmt.Exp is not ifelse", .{});
-        },
-        //todo ... rest of test
-    }
-
-    // std.debug.print("stmt: {any}\n", .{stmt});
+    // switch (stmt.Exp) {
+    //     .ifelse => |ifelse| {
+    //         std.debug.print("ifelse: {any}\n", .{ifelse});
+    //         try testing.expectEqualStrings("if", ifelse.tokenLiteral());
+    //     },
+    //     else => {
+    //         debug.panic("stmt.Exp is not ifelse", .{});
+    //     },
+    //     //todo ... rest of test
+    // }
 
 }

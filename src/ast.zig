@@ -12,6 +12,7 @@ const ExpressionType = enum {
     prefix,
     infix,
     boolean,
+    ifelse,
     err,
 };
 
@@ -30,6 +31,7 @@ pub const Expression = union(ExpressionType) {
     prefix: Prefix,
     infix: Infix,
     boolean: Boolean,
+    ifelse: IfElse,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -49,6 +51,9 @@ pub const Expression = union(ExpressionType) {
             },
             .boolean => |boolean| {
                 try boolean.string(buffer);
+            },
+            .ifelse => |ifelse| {
+                try ifelse.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -228,6 +233,84 @@ pub const Boolean = struct {
     }
     pub inline fn string(b: *const Boolean, buffer: *ArrayList(u8)) !void {
         try buffer.appendSlice(b.tokenLiteral());
+    }
+};
+
+pub const IfElse = struct {
+    Token: token.Token,
+    Condition: *Expression,
+    Consequence: *BlockStatement,
+    Alternative: *?BlockStatement,
+
+    pub inline fn tokenLiteral(i: *const IfElse) []const u8 {
+        return i.Token.Literal;
+    }
+
+    pub inline fn string(i: *const IfElse, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice("if");
+        try i.Condition.string(buffer);
+        try buffer.appendSlice(" ");
+        try i.Condition.string(buffer);
+        if (i.Alternative.*) |alt| {
+            try buffer.appendSlice("else ");
+            try alt.string(buffer);
+        }
+    }
+};
+
+pub const BlockStatement = struct {
+    Token: token.Token,
+    Statements: ArrayList(*Statement),
+    allocator: std.mem.Allocator,
+    pub fn init(allocator: std.mem.Allocator) BlockStatement {
+        const list = ArrayList(*Statement).init(allocator);
+        return BlockStatement{ .Statements = list, .allocator = allocator };
+    }
+
+    pub fn deinit(b: *BlockStatement) void {
+        for (b.Statements.items) |stmt| {
+            switch (stmt.*) {
+                .err => |_| {},
+                .letStatement => |let_stmt| {
+                    b.allocator.destroy(let_stmt.Name);
+                    b.allocator.destroy(let_stmt.Value);
+                },
+                .returnStatement => |ret_stmt| {
+                    b.allocator.destroy(ret_stmt.ReturnValue);
+                },
+                .expressionStatement => |exp_stmt| {
+                    _ = exp_stmt.Exp;
+                },
+                .identStatement => |ident_stmt| {
+                    _ = ident_stmt.Value;
+                },
+            }
+            b.allocator.destroy(stmt);
+        }
+        b.Statements.deinit();
+    }
+
+    pub inline fn tokenLiteral(b: *const BlockStatement) []const u8 {
+        return b.Token.Literal;
+    }
+    pub inline fn string(b: *const BlockStatement, buffer: *ArrayList(u8)) !void {
+        for (b.Statements.items) |stmt| {
+            switch (stmt.*) {
+                .letStatement => |let_stmt| {
+                    try let_stmt.string(buffer);
+                },
+                .returnStatement => |ret_stmt| {
+                    try ret_stmt.string(buffer);
+                },
+                .expressionStatement => |exp_stmt| {
+                    try exp_stmt.string(buffer);
+                },
+                .identStatement => |ident_stmt| {
+                    try buffer.appendSlice(ident_stmt.Value);
+                },
+                .err => |_| {},
+            }
+        }
     }
 };
 

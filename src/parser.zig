@@ -167,6 +167,7 @@ pub const Parser = struct {
             TokenType.FALSE => leftExpression.* = .{ .boolean = try p.parseBoolean() },
             TokenType.BANG => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
             TokenType.MINUS => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.IF => leftExpression.* = .{ .ifelse = try p.parseIfExpression() },
             TokenType.LPAREN => leftExpression.* = try p.parseGroupExpression(),
             TokenType.EOF => return leftExpression.*,
             TokenType.SEMICOLON => return leftExpression.*,
@@ -246,6 +247,41 @@ pub const Parser = struct {
         const exp = try p.parseExpression(TokenPrecedence.LOWEST);
         if (!try p.expectPeek(TokenType.RPAREN)) return ast.Expression{ .err = ast.AstParseError.NoRparen };
         return exp;
+    }
+
+    //todo
+    pub inline fn parseIfExpression(p: *Parser) !ast.Expression.ifelse {
+        const expression = ast.IfElse{
+            .Token = p.curToken,
+            .Condition = undefined,
+            .Consequence = undefined,
+            .Alternative = null,
+        };
+        expression.Condition = try p.parseExpression(TokenPrecedence.LOWEST);
+        expression.Consequence = try p.parseBlockStatement();
+        // p.nextToken();
+        // const exp = try p.parseExpression(TokenPrecedence.LOWEST);
+        // if (!try p.expectPeek(TokenType.RPAREN)) return ast.Expression{ .err = ast.AstParseError.NoRparen };
+        return expression;
+    }
+
+    //todo
+    pub inline fn parseBlockStatement(p: *Parser) !ast.BlockStatement {
+        var block = ast.BlockStatement.init(p.allocator);
+        defer block.deinit();
+        // while (!p.curTokenIs(TokenType.RBRACE) and p.curToken.Type != TokenType.EOF) : (p.nextToken()) {
+        //     const stmt = try p.parseStatement();
+        //     switch (stmt) {
+        //         .err => |err| {
+        //             _ = err;
+        //         },
+        //         else => {
+        //             try block.Statements.append(stmt);
+        //         },
+        //     }
+        // }
+        // try p.expectPeek(TokenType.RBRACE);
+        return block;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -823,4 +859,35 @@ test "operator precedence parsing" {
         defer actual.deinit();
         try testing.expectEqualStrings(t.expected, actual.items);
     }
+}
+
+test "test if expression" {
+    const testAlloc = testing.allocator;
+    const input = "if (x<y) {x};";
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+
+    const stmt = program.Statements.items[0].expressionStatement;
+
+    switch (stmt.Exp) {
+        .ifelse => |ifelse| {
+            std.debug.print("ifelse: {any}\n", .{ifelse});
+            try testing.expectEqualStrings("if", ifelse.tokenLiteral());
+        },
+        else => {
+            debug.panic("stmt.Exp is not ifelse", .{});
+        },
+        //todo ... rest of test
+    }
+
+    // std.debug.print("stmt: {any}\n", .{stmt});
+
 }

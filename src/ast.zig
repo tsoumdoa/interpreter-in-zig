@@ -238,9 +238,9 @@ pub const Boolean = struct {
 
 pub const IfElse = struct {
     Token: token.Token,
-    Condition: *Expression,
+    Condition: *const Expression,
     Consequence: *BlockStatement,
-    Alternative: *?BlockStatement,
+    Alternative: ?*const BlockStatement,
 
     pub inline fn tokenLiteral(i: *const IfElse) []const u8 {
         return i.Token.Literal;
@@ -251,7 +251,7 @@ pub const IfElse = struct {
         try i.Condition.string(buffer);
         try buffer.appendSlice(" ");
         try i.Condition.string(buffer);
-        if (i.Alternative.*) |alt| {
+        if (i.Alternative) |alt| {
             try buffer.appendSlice("else ");
             try alt.string(buffer);
         }
@@ -262,9 +262,9 @@ pub const BlockStatement = struct {
     Token: token.Token,
     Statements: ArrayList(*Statement),
     allocator: std.mem.Allocator,
-    pub fn init(allocator: std.mem.Allocator) BlockStatement {
+    pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token) BlockStatement {
         const list = ArrayList(*Statement).init(allocator);
-        return BlockStatement{ .Statements = list, .allocator = allocator };
+        return BlockStatement{ .Token = tokenValue, .Statements = list, .allocator = allocator };
     }
 
     pub fn deinit(b: *BlockStatement) void {

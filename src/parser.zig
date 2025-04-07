@@ -249,39 +249,24 @@ pub const Parser = struct {
         return exp;
     }
 
-    //todo
-    pub inline fn parseIfExpression(p: *Parser) !ast.Expression.ifelse {
-        const expression = ast.IfElse{
+    pub inline fn parseIfExpression(p: *Parser) !ast.IfElse {
+        var expression = ast.IfElse{
             .Token = p.curToken,
             .Condition = undefined,
             .Consequence = undefined,
             .Alternative = null,
         };
-        expression.Condition = try p.parseExpression(TokenPrecedence.LOWEST);
-        expression.Consequence = try p.parseBlockStatement();
-        // p.nextToken();
-        // const exp = try p.parseExpression(TokenPrecedence.LOWEST);
-        // if (!try p.expectPeek(TokenType.RPAREN)) return ast.Expression{ .err = ast.AstParseError.NoRparen };
+        expression.Condition = &try p.parseExpression(TokenPrecedence.LOWEST);
+        expression.Consequence = p.parseBlockStatement();
+        //todo
         return expression;
     }
 
-    //todo
-    pub inline fn parseBlockStatement(p: *Parser) !ast.BlockStatement {
-        var block = ast.BlockStatement.init(p.allocator);
+    pub inline fn parseBlockStatement(p: *Parser) *ast.BlockStatement {
+        var block = ast.BlockStatement.init(p.allocator, p.curToken);
         defer block.deinit();
-        // while (!p.curTokenIs(TokenType.RBRACE) and p.curToken.Type != TokenType.EOF) : (p.nextToken()) {
-        //     const stmt = try p.parseStatement();
-        //     switch (stmt) {
-        //         .err => |err| {
-        //             _ = err;
-        //         },
-        //         else => {
-        //             try block.Statements.append(stmt);
-        //         },
-        //     }
-        // }
-        // try p.expectPeek(TokenType.RBRACE);
-        return block;
+        //todo
+        return &block;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {

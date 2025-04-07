@@ -76,6 +76,7 @@ pub const AstParseError = enum {
     ParseError,
     UnexpectedToken,
     InvalidSyntax,
+    NoRparen,
     // ... other errors
 };
 

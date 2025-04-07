@@ -167,6 +167,7 @@ pub const Parser = struct {
             TokenType.FALSE => leftExpression.* = .{ .boolean = try p.parseBoolean() },
             TokenType.BANG => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
             TokenType.MINUS => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
+            TokenType.LPAREN => leftExpression.* = try p.parseGroupExpression(),
             TokenType.EOF => return leftExpression.*,
             TokenType.SEMICOLON => return leftExpression.*,
             TokenType.SUM => {},
@@ -225,9 +226,6 @@ pub const Parser = struct {
     }
 
     pub inline fn parseInfixExpression(p: *Parser, left: *ast.Expression) !ast.Infix {
-        // const leftNew = try p.allocator.create(ast.Expression);
-        // leftNew.* = left.*;
-
         var infix = ast.Infix{
             .Token = p.curToken,
             .Operator = p.curToken.Literal,
@@ -241,6 +239,13 @@ pub const Parser = struct {
         try p.expressions.append(right);
         infix.Right = right;
         return infix;
+    }
+
+    pub inline fn parseGroupExpression(p: *Parser) !ast.Expression {
+        p.nextToken();
+        const exp = try p.parseExpression(TokenPrecedence.LOWEST);
+        if (!try p.expectPeek(TokenType.RPAREN)) return ast.Expression{ .err = ast.AstParseError.NoRparen };
+        return exp;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -776,6 +781,26 @@ test "operator precedence parsing" {
         .{
             .input = "3 < 5 == true;",
             .expected = "((3 < 5) == true)",
+        },
+        .{
+            .input = "1 + (2 + 3) + 4;",
+            .expected = "((1 + (2 + 3)) + 4)",
+        },
+        .{
+            .input = "(5 + 5) * 2;",
+            .expected = "((5 + 5) * 2)",
+        },
+        .{
+            .input = "2 / (5 + 5);",
+            .expected = "(2 / (5 + 5))",
+        },
+        .{
+            .input = "-(5 + 5);",
+            .expected = "(-(5 + 5))",
+        },
+        .{
+            .input = "!(true == true)",
+            .expected = "(!(true == true))",
         },
     };
 

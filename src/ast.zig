@@ -12,16 +12,19 @@ const ExpressionType = enum {
     prefix,
     infix,
     boolean,
+    ifelse,
     err,
 };
 
-const ParseError = error{
+pub const ParseError = error{
     ParseError,
     ParseStringError,
+    ParseIfExpressionError,
     UnexpectedToken,
     InvalidSyntax,
     OutOfMemory,
     NoSpaceLeft,
+    InvalidCharacter,
 };
 
 pub const Expression = union(ExpressionType) {
@@ -30,6 +33,7 @@ pub const Expression = union(ExpressionType) {
     prefix: Prefix,
     infix: Infix,
     boolean: Boolean,
+    ifelse: IfElse,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -49,6 +53,9 @@ pub const Expression = union(ExpressionType) {
             },
             .boolean => |boolean| {
                 try boolean.string(buffer);
+            },
+            .ifelse => |ifelse| {
+                try ifelse.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -77,6 +84,8 @@ pub const AstParseError = enum {
     UnexpectedToken,
     InvalidSyntax,
     NoRparen,
+    Eof,
+    Eol,
     // ... other errors
 };
 
@@ -122,7 +131,7 @@ pub const ReturnStatement = struct {
 
 pub const ExpressionStatement = struct {
     Token: token.Token,
-    Exp: Expression,
+    Exp: *Expression,
 
     pub inline fn init(t: token.Token) ExpressionStatement {
         return ExpressionStatement{ .Token = t, .Exp = undefined };
@@ -131,8 +140,8 @@ pub const ExpressionStatement = struct {
         return es.Token.Literal;
     }
 
-    pub inline fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) !void {
-        switch (es.Exp) {
+    pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) ParseError!void {
+        switch (es.Exp.*) {
             .ident => |ident| {
                 try buffer.appendSlice(ident.Value);
             },
@@ -148,6 +157,9 @@ pub const ExpressionStatement = struct {
             },
             .boolean => |boolean| {
                 try boolean.string(buffer);
+            },
+            .ifelse => |ifelse| {
+                try ifelse.string(buffer);
             },
             else => {},
         }
@@ -231,6 +243,101 @@ pub const Boolean = struct {
     }
 };
 
+pub const IfElse = struct {
+    Token: token.Token,
+    Condition: *Expression,
+    Consequence: *BlockStatement,
+    Alternative: ?*BlockStatement,
+
+    pub inline fn tokenLiteral(i: *const IfElse) []const u8 {
+        return i.Token.Literal;
+    }
+
+    pub inline fn string(i: *const IfElse, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice("if");
+        try i.Condition.*.string(buffer);
+        try buffer.appendSlice(" ");
+        try i.Consequence.*.string(buffer);
+        if (i.Alternative) |alt| {
+            try buffer.appendSlice(" else ");
+            try alt.string(buffer);
+        }
+    }
+};
+
+pub const BlockStatement = struct {
+    Token: token.Token,
+    Statements: ArrayList(*Statement),
+    allocator: std.mem.Allocator,
+    pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token) BlockStatement {
+        const list = ArrayList(*Statement).init(allocator);
+        return BlockStatement{ .Token = tokenValue, .Statements = list, .allocator = allocator };
+    }
+
+    pub inline fn deinit(b: *BlockStatement) void {
+        for (b.Statements.items) |stmt| {
+            switch (stmt.*) {
+                .err => |_| {},
+                .letStatement => |let_stmt| {
+                    b.allocator.destroy(let_stmt.Name);
+                    b.allocator.destroy(let_stmt.Value);
+                },
+                .returnStatement => |ret_stmt| {
+                    b.allocator.destroy(ret_stmt.ReturnValue);
+                },
+                .expressionStatement => |exp_stmt| {
+                    const exp = exp_stmt.Exp;
+                    switch (exp.*) {
+                        .infix => |infix| {
+                            b.allocator.destroy(infix.Left);
+                            b.allocator.destroy(infix.Right);
+                        },
+                        .prefix => |prefix| {
+                            b.allocator.destroy(prefix.Right);
+                        },
+                        else => {},
+                    }
+                },
+                .identStatement => |ident_stmt| {
+                    _ = ident_stmt.Value;
+                },
+            }
+            b.allocator.destroy(stmt);
+        }
+        b.Statements.deinit();
+    }
+
+    pub inline fn tokenLiteral(b: *const BlockStatement) []const u8 {
+        return b.Token.Literal;
+    }
+
+    pub inline fn addStatement(b: *BlockStatement, stmt: Statement) !void {
+        const stmtPtr = try b.allocator.create(Statement);
+        stmtPtr.* = stmt;
+        try b.Statements.append(stmtPtr);
+    }
+
+    pub inline fn string(b: *const BlockStatement, buffer: *ArrayList(u8)) !void {
+        for (b.Statements.items) |stmt| {
+            switch (stmt.*) {
+                .letStatement => |let_stmt| {
+                    try let_stmt.string(buffer);
+                },
+                .returnStatement => |ret_stmt| {
+                    try ret_stmt.string(buffer);
+                },
+                .expressionStatement => |exp_stmt| {
+                    try exp_stmt.string(buffer);
+                },
+                .identStatement => |ident_stmt| {
+                    try buffer.appendSlice(ident_stmt.Value);
+                },
+                .err => |_| {},
+            }
+        }
+    }
+};
+
 pub const Program = struct {
     Statements: ArrayList(*Statement),
     allocator: std.mem.Allocator,
@@ -240,27 +347,24 @@ pub const Program = struct {
         return Program{ .Statements = list, .allocator = allocator };
     }
 
-    pub fn deinit(p: *Program) void {
+    pub inline fn deinit(p: *Program) void {
         for (p.Statements.items) |stmt| {
             switch (stmt.*) {
                 .err => |_| {},
                 .letStatement => |let_stmt| {
                     p.allocator.destroy(let_stmt.Name);
-                    p.allocator.destroy(stmt);
                 },
                 .returnStatement => |ret_stmt| {
                     p.allocator.destroy(ret_stmt.ReturnValue);
-                    p.allocator.destroy(stmt);
                 },
                 .expressionStatement => |exp_stmt| {
                     _ = exp_stmt.Exp;
-                    p.allocator.destroy(stmt);
                 },
                 .identStatement => |ident_stmt| {
                     p.allocator.free(ident_stmt.Value);
-                    p.allocator.destroy(stmt);
                 },
             }
+            p.allocator.destroy(stmt);
         }
         p.Statements.deinit();
     }

@@ -16,13 +16,15 @@ const ExpressionType = enum {
     err,
 };
 
-const ParseError = error{
+pub const ParseError = error{
     ParseError,
     ParseStringError,
+    ParseIfExpressionError,
     UnexpectedToken,
     InvalidSyntax,
     OutOfMemory,
     NoSpaceLeft,
+    InvalidCharacter,
 };
 
 pub const Expression = union(ExpressionType) {
@@ -243,7 +245,7 @@ pub const IfElse = struct {
     Token: token.Token,
     Condition: *Expression,
     Consequence: *BlockStatement,
-    Alternative: ?*const BlockStatement,
+    Alternative: ?*BlockStatement,
 
     pub inline fn tokenLiteral(i: *const IfElse) []const u8 {
         return i.Token.Literal;
@@ -253,11 +255,9 @@ pub const IfElse = struct {
         try buffer.appendSlice("if");
         try i.Condition.*.string(buffer);
         try buffer.appendSlice(" ");
-        //todo consequence's memory allocation is just wrong and broken...
         try i.Consequence.*.string(buffer);
-        // try i.Condition.*.string(buffer);
         if (i.Alternative) |alt| {
-            try buffer.appendSlice("else ");
+            try buffer.appendSlice(" else ");
             try alt.string(buffer);
         }
     }

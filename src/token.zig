@@ -81,4 +81,6 @@ test "can initialize token" {
 test "lookupIdent" {
     try std.testing.expectEqual(TokenType.LET, lookupIdent("let"));
     try std.testing.expectEqual(TokenType.FUNCTION, lookupIdent("fn"));
+    try std.testing.expectEqual(TokenType.IF, lookupIdent("if"));
+    try std.testing.expectEqual(TokenType.ELSE, lookupIdent("else"));
 }

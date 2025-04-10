@@ -85,9 +85,6 @@ pub const Lexer = struct {
                         tok = .{ .Type = TokenType.BANG, .Literal = "!" };
                     }
                 },
-                // '*' => {
-                //     tok = .{ .Type = TokenType.ASTERISK, .Literal = "*" };
-                // },
                 '/' => {
                     tok = .{ .Type = TokenType.SLASH, .Literal = "/" };
                 },

@@ -7,6 +7,7 @@ const debug = std.debug;
 const testing = std.testing;
 const assert = debug.assert;
 const ArrayList = std.ArrayList;
+const ParseError = ast.ParseError;
 
 const parseError = error{
     ParseError,
@@ -15,6 +16,7 @@ const parseError = error{
     Overflow,
     InvalidCharacter,
     OutOfMemory,
+    InvalidIfExpression,
     // ... other errors
 };
 
@@ -74,11 +76,6 @@ pub const Parser = struct {
             p.allocator.destroy(expr);
         }
         p.expressions.deinit();
-
-        // for (p.statements.items) |stmt| {
-        //     p.allocator.destroy(stmt);
-        // }
-        // p.statements.deinit();
 
         for (p.blocks.items) |block| {
             block.deinit();
@@ -147,7 +144,7 @@ pub const Parser = struct {
         };
         _ = isAssign;
 
-        while (!p.curTokenIs(TokenType.SEMICOLON) and p.curToken.Type != TokenType.EOF) : (p.nextToken()) {}
+        while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
 
         return stmt;
     }
@@ -160,7 +157,7 @@ pub const Parser = struct {
         identPtr.* = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
         stmt.ReturnValue = identPtr;
 
-        while (!p.curTokenIs(TokenType.SEMICOLON) and p.curToken.Type != TokenType.EOF) : (p.nextToken()) {}
+        while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
 
         return stmt;
     }
@@ -169,7 +166,7 @@ pub const Parser = struct {
         var stmt = ast.ExpressionStatement.init(p.curToken);
         const expr = try p.parseExpression(TokenPrecedence.LOWEST);
         stmt.Exp = expr;
-        while (!p.curTokenIs(TokenType.SEMICOLON) and p.curToken.Type != TokenType.EOF) : (p.nextToken()) {}
+        while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
         return stmt;
     }
 
@@ -187,6 +184,7 @@ pub const Parser = struct {
             TokenType.LPAREN => leftExpression = try p.parseGroupExpression(),
             TokenType.EOF => return leftExpression,
             TokenType.SEMICOLON => return leftExpression,
+            // TokenType.ELSE => {},
             TokenType.SUM => {},
             TokenType.SLASH => {},
             TokenType.PRODUCT => {},
@@ -267,10 +265,28 @@ pub const Parser = struct {
             .Alternative = null,
         };
 
+        const isLparen = try p.expectPeek(TokenType.LPAREN);
+        if (!isLparen) return parseError.InvalidIfExpression;
+
         p.nextToken();
         ifelse.Condition = try p.parseExpression(TokenPrecedence.LOWEST);
 
+        const isRParen = try p.expectPeek(TokenType.RPAREN);
+        if (!isRParen) return parseError.InvalidIfExpression;
+
+        var isLbrace = try p.expectPeek(TokenType.LBRACE);
+        if (!isLbrace) return parseError.InvalidIfExpression;
+
         ifelse.Consequence = try p.parseBlockStatement();
+
+        if (p.curTokenIs(TokenType.ELSE)) {
+            p.nextToken();
+
+            isLbrace = try p.expectPeek(TokenType.LBRACE);
+            if (!isLbrace) return parseError.InvalidIfExpression;
+
+            ifelse.Alternative = try p.parseBlockStatement();
+        }
 
         return ifelse;
     }
@@ -281,18 +297,20 @@ pub const Parser = struct {
         try p.blocks.append(block);
         p.nextToken();
 
-        while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) : (p.nextToken()) {
+        std.debug.print("is else{}\n", .{p.curToken.Type});
+        while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) {
+            std.debug.print("is else{}\n", .{p.curToken.Type});
             const stmt = try p.parseStatement();
-
             switch (stmt) {
                 .err => |err| {
                     _ = err;
                 },
                 else => {
-                    // std.debug.print("block from parseB: {any}\n", .{stmt.expressionStatement.Exp.prefix});
                     try block.addStatement(stmt);
                 },
             }
+            p.nextToken();
+            std.debug.print("is else{}\n", .{p.curToken.Type});
         }
         return block;
     }
@@ -893,33 +911,101 @@ test "test if expression" {
     var testArrayBuffer = ArrayList(u8).init(testAlloc);
     defer testArrayBuffer.deinit();
     try stmt.string(&testArrayBuffer);
-    std.debug.print("stmt: {s}\n", .{testArrayBuffer.items});
-    // std.debug.print("stmt: {any}\n", .{stmt});
 
     switch (stmt.Exp.*) {
         .ifelse => |ifelse| {
             const ifToken = ifelse.tokenLiteral();
             try testing.expectEqualStrings("if", ifToken);
 
-            // const ifCondition = ifelse.Condition.infix;
-            //
-            // const left = ifCondition.Left.*;
-            // try testing.expectEqualStrings("x", left.ident.Value);
-            //
-            // const operator = ifCondition.Operator;
-            // try testing.expectEqualStrings("<", operator);
-            //
-            // const right = ifCondition.Right.*;
-            // try testing.expectEqualStrings("y", right.ident.Value);
+            const ifCondition = ifelse.Condition.infix;
 
-            // std.debug.print("block: {*}\n", .{ifelse.Consequence});
+            const left = ifCondition.Left.*;
+            try testing.expectEqualStrings("x", left.ident.Value);
 
-            // const consequence = ifelse.Consequence.*;
-            // const c = consequence.Statements.items[0];
-            // const exp = c.expressionStatement.Exp;
-            // _ = exp;
+            const operator = ifCondition.Operator;
+            try testing.expectEqualStrings("<", operator);
 
-            // std.debug.print("consequence: {any}\n", .{exp});
+            const right = ifCondition.Right.*;
+            try testing.expectEqualStrings("y", right.ident.Value);
+
+            const consequences = ifelse.Consequence.*;
+            const c = consequences.Statements.items[0];
+            const exp = c.expressionStatement.Exp;
+            var buffer = ArrayList(u8).init(testAlloc);
+            defer buffer.deinit();
+            try exp.string(&buffer);
+            try testing.expectEqualStrings("x", buffer.items);
+
+            buffer.clearAndFree();
+
+            try ifelse.string(&buffer);
+            try testing.expectEqualStrings("if(x < y) x", buffer.items);
+        },
+        else => {
+            debug.panic("stmt.Exp is not ifelse", .{});
+        },
+    }
+}
+
+test "test if else expression" {
+    const testAlloc = testing.allocator;
+    const input = "if ( x < y ) { x } else { y }";
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+
+    const stmt = program.Statements.items[0].expressionStatement;
+    var testArrayBuffer = ArrayList(u8).init(testAlloc);
+    defer testArrayBuffer.deinit();
+    try stmt.string(&testArrayBuffer);
+
+
+    switch (stmt.Exp.*) {
+        .ifelse => |ifelse| {
+            const ifToken = ifelse.tokenLiteral();
+            try testing.expectEqualStrings("if", ifToken);
+
+            const ifCondition = ifelse.Condition.infix;
+
+            const left = ifCondition.Left.*;
+            try testing.expectEqualStrings("x", left.ident.Value);
+
+            const operator = ifCondition.Operator;
+            try testing.expectEqualStrings("<", operator);
+
+            const right = ifCondition.Right.*;
+            try testing.expectEqualStrings("y", right.ident.Value);
+
+            const consequences = ifelse.Consequence.*;
+            const c = consequences.Statements.items[0];
+            const exp = c.expressionStatement.Exp;
+            var buffer = ArrayList(u8).init(testAlloc);
+            defer buffer.deinit();
+            try exp.string(&buffer);
+            try testing.expectEqualStrings("x", buffer.items);
+
+            buffer.clearAndFree();
+
+            if (ifelse.Alternative) |alt| {
+                //statement legnth
+                debug.print("alt.Statements.items.len: {any}\n", .{alt.Statements.items.len});
+                const a = alt.Statements.items[0];
+                const altExp = a.expressionStatement.Exp;
+                try altExp.string(&buffer);
+                std.debug.print("altExp: {s}\n", .{buffer.items});
+                try testing.expectEqualStrings("y", buffer.items);
+            }
+
+            buffer.clearAndFree();
+            try ifelse.string(&buffer);
+            try testing.expectEqualStrings("if(x < y) x else y", buffer.items);
         },
         else => {
             debug.panic("stmt.Exp is not ifelse", .{});

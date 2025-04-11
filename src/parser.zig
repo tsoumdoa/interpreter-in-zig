@@ -9,17 +9,9 @@ const assert = debug.assert;
 const ArrayList = std.ArrayList;
 const ParseError = ast.ParseError;
 
-const parseError = error{
-    ParseError,
-    UnexpectedToken,
-    InvalidSyntax,
-    Overflow,
-    InvalidCharacter,
-    OutOfMemory,
-    InvalidIfExpression,
-    InvalidFunctionLiteral,
+const parseError = error{ ParseError, UnexpectedToken, InvalidSyntax, Overflow, InvalidCharacter, OutOfMemory, InvalidIfExpression, InvalidFunctionLiteral, NoRparen
     // ... other errors
-};
+    };
 
 pub const TokenPrecedence = enum(u8) {
     LOWEST = 1,
@@ -170,7 +162,12 @@ pub const Parser = struct {
 
     pub inline fn parseExpressionStatement(p: *Parser) !ast.ExpressionStatement {
         var stmt = ast.ExpressionStatement.init(p.curToken);
-        const expr = try p.parseExpression(TokenPrecedence.LOWEST);
+        const expr = p.parseExpression(TokenPrecedence.LOWEST) catch |err| {
+            std.debug.print("\x1b[1;31m", .{});
+            std.debug.print("parseExpressionStatement err, reason: {}\n", .{err});
+            std.debug.print("\x1b[0m", .{});
+            return err;
+        };
         stmt.Exp = expr;
         while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
         return stmt;
@@ -326,6 +323,7 @@ pub const Parser = struct {
         const isLParen = try p.expectPeek(TokenType.LPAREN);
         if (!isLParen) return parseError.InvalidFunctionLiteral;
 
+        std.debug.print("parseFunctionLiteral\n", .{});
         const params = try p.parseFunctionParams();
         functionLiteral.Params = params;
 
@@ -346,6 +344,7 @@ pub const Parser = struct {
             return params;
         }
 
+        //print in red bold text
         var ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
         try params.append(&ident);
 
@@ -355,9 +354,12 @@ pub const Parser = struct {
             ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
             try params.append(&ident);
         }
-
         const isRParen = try p.expectPeek(TokenType.RPAREN);
-        if (!isRParen) return parseError.InvalidFunctionLiteral;
+        std.debug.print("\x1b[1;31m", .{});
+        std.debug.print("isRParen: {}\n", .{isRParen});
+        std.debug.print("init and append params\n", .{});
+        std.debug.print("\x1b[0m", .{});
+        if (!isRParen) return parseError.NoRparen;
 
         return params;
     }

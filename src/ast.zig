@@ -13,6 +13,7 @@ const ExpressionType = enum {
     infix,
     boolean,
     ifelse,
+    functionLiteral,
     err,
 };
 
@@ -34,6 +35,7 @@ pub const Expression = union(ExpressionType) {
     infix: Infix,
     boolean: Boolean,
     ifelse: IfElse,
+    functionLiteral: FunctionLiteral,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -56,6 +58,9 @@ pub const Expression = union(ExpressionType) {
             },
             .ifelse => |ifelse| {
                 try ifelse.string(buffer);
+            },
+            .functionLiteral => |functionLiteral| {
+                try functionLiteral.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -335,6 +340,27 @@ pub const BlockStatement = struct {
                 .err => |_| {},
             }
         }
+    }
+};
+
+pub const FunctionLiteral = struct {
+    Token: token.Token,
+    Params: ArrayList(*Identifier),
+    Body: *BlockStatement,
+
+    pub inline fn tokenLiteral(f: *const FunctionLiteral) []const u8 {
+        return f.Token.Literal;
+    }
+    pub inline fn string(f: *const FunctionLiteral, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice("fn");
+        try buffer.appendSlice("(");
+        for (f.Params.items) |param| {
+            try buffer.appendSlice(param.string());
+            try buffer.appendSlice(", ");
+        }
+        try buffer.appendSlice(")");
+        try buffer.appendSlice(" ");
+        try f.Body.string(buffer);
     }
 };
 

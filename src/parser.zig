@@ -17,6 +17,7 @@ const parseError = error{
     InvalidCharacter,
     OutOfMemory,
     InvalidIfExpression,
+    InvalidFunctionLiteral,
     // ... other errors
 };
 
@@ -47,18 +48,18 @@ pub const Parser = struct {
     peekToken: token.Token = undefined,
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
-    // statements: ArrayList(*ast.Statement),
     expressions: ArrayList(*ast.Expression),
     blocks: ArrayList(*ast.BlockStatement),
+    identfiers: ArrayList(*ArrayList(*ast.Identifier)),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
             .lexer = l,
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
-            // .statements = ArrayList(*ast.Statement).init(allocator),
             .expressions = ArrayList(*ast.Expression).init(allocator),
             .blocks = ArrayList(*ast.BlockStatement).init(allocator),
+            .identfiers = ArrayList(*ArrayList(*ast.Identifier)).init(allocator),
         };
 
         p.nextToken();
@@ -82,6 +83,11 @@ pub const Parser = struct {
             p.allocator.destroy(block);
         }
         p.blocks.deinit();
+
+        for (p.identfiers.items) |ident| {
+            ident.deinit();
+        }
+        p.identfiers.deinit();
     }
 
     pub fn nextToken(p: *Parser) void {
@@ -182,6 +188,7 @@ pub const Parser = struct {
             TokenType.MINUS => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
             TokenType.IF => leftExpression.* = .{ .ifelse = try p.parseIfExpression() },
             TokenType.LPAREN => leftExpression = try p.parseGroupExpression(),
+            TokenType.FUNCTION => leftExpression.* = .{ .functionLiteral = try p.parseFunctionLiteral() },
             TokenType.EOF => {},
             TokenType.SEMICOLON => {},
             TokenType.ELSE => {},
@@ -307,6 +314,52 @@ pub const Parser = struct {
             }
         }
         return block;
+    }
+
+    pub inline fn parseFunctionLiteral(p: *Parser) !ast.FunctionLiteral {
+        var functionLiteral = ast.FunctionLiteral{
+            .Token = p.curToken,
+            .Params = undefined,
+            .Body = undefined,
+        };
+
+        const isLParen = try p.expectPeek(TokenType.LPAREN);
+        if (!isLParen) return parseError.InvalidFunctionLiteral;
+
+        const params = try p.parseFunctionParams();
+        functionLiteral.Params = params;
+
+        const isLBrace = try p.expectPeek(TokenType.LBRACE);
+        if (!isLBrace) return parseError.InvalidFunctionLiteral;
+
+        functionLiteral.Body = try p.parseBlockStatement();
+
+        return functionLiteral;
+    }
+
+    pub inline fn parseFunctionParams(p: *Parser) !ArrayList(*ast.Identifier) {
+        var params = ArrayList(*ast.Identifier).init(p.allocator);
+        try p.identfiers.append(&params);
+
+        if (p.peekTokenIs(TokenType.RPAREN)) {
+            p.nextToken();
+            return params;
+        }
+
+        var ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
+        try params.append(&ident);
+
+        while (p.peekTokenIs(TokenType.COMMA)) {
+            p.nextToken();
+            p.nextToken();
+            ident = ast.Identifier{ .Token = p.curToken, .Value = p.curToken.Literal };
+            try params.append(&ident);
+        }
+
+        const isRParen = try p.expectPeek(TokenType.RPAREN);
+        if (!isRParen) return parseError.InvalidFunctionLiteral;
+
+        return params;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -1001,5 +1054,20 @@ test "test if else expression" {
         else => {
             debug.panic("stmt.Exp is not ifelse", .{});
         },
+    }
+}
+
+test "test function literal" {
+    const testAlloc = testing.allocator;
+    const input = "fn(x, y) { x + y; }";
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    for (p.errors.items) |err| {
+        debug.print("error: {s}\n", .{err});
     }
 }

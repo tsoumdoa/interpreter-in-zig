@@ -68,7 +68,6 @@ pub const Parser = struct {
         }
         p.expressions.deinit();
 
-
         for (p.blocks.items) |block| {
             block.deinit();
             p.allocator.destroy(block);
@@ -330,31 +329,36 @@ pub const Parser = struct {
         return functionLiteral;
     }
 
-    pub inline fn parseFunctionParams(p: *Parser) !ArrayList(ast.Identifier) {
-        var params = ArrayList(ast.Identifier).init(p.allocator);
+    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(*ast.Identifier) {
+        var params = ArrayList(*ast.Identifier).init(p.allocator);
         defer params.deinit();
 
         if (p.peekTokenIs(TokenType.RPAREN)) {
             p.nextToken();
-            return params;
+            return &params;
         }
 
         p.nextToken();
-
-        const ident = p.parseIdentifier();
-        try params.append(ident);
+        const identPtr = try p.allocator.create(ast.Identifier);
+        identPtr.* = p.parseIdentifier();
+        // debug.print("identPtr.Token.Literal: {*}\n", .{identPtr});
+        // debug.print("identPtr.Token.Literal: {}\n", .{p.parseIdentifier()});
+        try params.append(identPtr);
 
         while (p.peekTokenIs(TokenType.COMMA)) {
             p.nextToken();
             p.nextToken();
-            const i = p.parseIdentifier();
-            try params.append(i);
+            const itPtr = try p.allocator.create(ast.Identifier);
+            itPtr.* = p.parseIdentifier();
+            // // debug.print("identPtr.Token.Literal: {*}\n", .{itPtr});
+            // debug.print("identPtr.Token.Literal: {}\n", .{p.parseIdentifier()});
+            try params.append(itPtr);
         }
 
         const isRParen = try p.expectPeek(TokenType.RPAREN);
         if (!isRParen) return parseError.NoRparen;
 
-        return params;
+        return &params;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -1061,6 +1065,43 @@ test "test function literal" {
     defer p.deinit();
     var program = try p.parseProgram();
     defer program.deinit();
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+
+    const stmt = program.Statements.items[0].expressionStatement;
+    var testArrayBuffer = ArrayList(u8).init(testAlloc);
+    defer testArrayBuffer.deinit();
+
+    switch (stmt.Exp.*) {
+        .functionLiteral => |functionLiteral| {
+            const functionToken = functionLiteral.tokenLiteral();
+            try testing.expectEqualStrings("fn", functionToken);
+
+            const params = functionLiteral.Params;
+            try testing.expectEqual(@as(usize, 2), params.items.len);
+
+            const param = params.items[0];
+
+            debug.print("param.Token.Literal: {}\n", .{param});
+
+            // try testing.expectEqualStrings("x", param.identStatement.Token.Literal);
+            //
+            // const param2 = params.items[1];
+            // try testing.expectEqualStrings("y", param2.);
+
+            // const body = functionLiteral.Body.*;
+            // const exp = body.Statements.items[0].expressionStatement.Exp;
+            // var buffer = ArrayList(u8).init(testAlloc);
+            // defer buffer.deinit();
+            // try exp.string(&buffer);
+            // try testing.expectEqualStrings("(x + y)", buffer.items);
+        },
+        else => {
+            debug.panic("stmt.Exp is not ifelse", .{});
+        },
+    }
 
     // for (p.errors.items) |err| {
     //     debug.print("error: {s}\n", .{err});

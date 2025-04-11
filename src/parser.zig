@@ -42,6 +42,7 @@ pub const Parser = struct {
     errors: ArrayList([]const u8),
     expressions: ArrayList(*ast.Expression),
     blocks: ArrayList(*ast.BlockStatement),
+    params: ArrayList(*ArrayList(ast.Identifier)),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
@@ -50,6 +51,7 @@ pub const Parser = struct {
             .errors = ArrayList([]const u8).init(allocator),
             .expressions = ArrayList(*ast.Expression).init(allocator),
             .blocks = ArrayList(*ast.BlockStatement).init(allocator),
+            .params = ArrayList(*ArrayList(ast.Identifier)).init(allocator),
         };
 
         p.nextToken();
@@ -73,6 +75,11 @@ pub const Parser = struct {
             p.allocator.destroy(block);
         }
         p.blocks.deinit();
+
+        for (p.params.items) |param| {
+            param.deinit();
+        }
+        p.params.deinit();
     }
 
     pub fn nextToken(p: *Parser) void {
@@ -329,9 +336,9 @@ pub const Parser = struct {
         return functionLiteral;
     }
 
-    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(*ast.Identifier) {
-        var params = ArrayList(*ast.Identifier).init(p.allocator);
-        defer params.deinit();
+    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(ast.Identifier) {
+        var params = ArrayList(ast.Identifier).init(p.allocator);
+        try p.params.append(&params);
 
         if (p.peekTokenIs(TokenType.RPAREN)) {
             p.nextToken();
@@ -339,20 +346,14 @@ pub const Parser = struct {
         }
 
         p.nextToken();
-        const identPtr = try p.allocator.create(ast.Identifier);
-        identPtr.* = p.parseIdentifier();
-        // debug.print("identPtr.Token.Literal: {*}\n", .{identPtr});
-        // debug.print("identPtr.Token.Literal: {}\n", .{p.parseIdentifier()});
-        try params.append(identPtr);
+        const ident = p.parseIdentifier();
+        try params.append(ident);
 
         while (p.peekTokenIs(TokenType.COMMA)) {
             p.nextToken();
             p.nextToken();
-            const itPtr = try p.allocator.create(ast.Identifier);
-            itPtr.* = p.parseIdentifier();
-            // // debug.print("identPtr.Token.Literal: {*}\n", .{itPtr});
-            // debug.print("identPtr.Token.Literal: {}\n", .{p.parseIdentifier()});
-            try params.append(itPtr);
+            const it = p.parseIdentifier();
+            try params.append(it);
         }
 
         const isRParen = try p.expectPeek(TokenType.RPAREN);
@@ -1080,13 +1081,11 @@ test "test function literal" {
             try testing.expectEqualStrings("fn", functionToken);
 
             const params = functionLiteral.Params;
-            try testing.expectEqual(@as(usize, 2), params.items.len);
+            try testing.expectEqual(2, params.items.len);
 
             const param = params.items[0];
+            try testing.expectEqualStrings("x", param.Value);
 
-            debug.print("param.Token.Literal: {}\n", .{param});
-
-            // try testing.expectEqualStrings("x", param.identStatement.Token.Literal);
             //
             // const param2 = params.items[1];
             // try testing.expectEqualStrings("y", param2.);

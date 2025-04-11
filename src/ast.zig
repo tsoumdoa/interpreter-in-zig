@@ -345,7 +345,7 @@ pub const BlockStatement = struct {
 
 pub const FunctionLiteral = struct {
     Token: token.Token,
-    Params: ArrayList(*Identifier),
+    Params: ArrayList(Identifier),
     Body: *BlockStatement,
 
     pub inline fn tokenLiteral(f: *const FunctionLiteral) []const u8 {

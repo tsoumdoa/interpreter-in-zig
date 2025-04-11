@@ -68,6 +68,7 @@ pub const Parser = struct {
         }
         p.expressions.deinit();
 
+
         for (p.blocks.items) |block| {
             block.deinit();
             p.allocator.destroy(block);
@@ -293,8 +294,9 @@ pub const Parser = struct {
 
         while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) {
             p.nextToken();
-            const stmt = try p.parseStatement();
-            switch (stmt) {
+            const stmt = try p.allocator.create(ast.Statement);
+            stmt.* = try p.parseStatement();
+            switch (stmt.*) {
                 .err => |err| {
                     _ = err;
                 },
@@ -323,7 +325,7 @@ pub const Parser = struct {
         const isLBrace = try p.expectPeek(TokenType.LBRACE);
         if (!isLBrace) return parseError.InvalidFunctionLiteral;
 
-        // functionLiteral.Body = try p.parseBlockStatement();
+        functionLiteral.Body = try p.parseBlockStatement();
 
         return functionLiteral;
     }

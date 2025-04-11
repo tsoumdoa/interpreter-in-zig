@@ -281,32 +281,6 @@ pub const BlockStatement = struct {
 
     pub inline fn deinit(b: *BlockStatement) void {
         for (b.Statements.items) |stmt| {
-            switch (stmt.*) {
-                .err => |_| {},
-                .letStatement => |let_stmt| {
-                    b.allocator.destroy(let_stmt.Name);
-                    b.allocator.destroy(let_stmt.Value);
-                },
-                .returnStatement => |ret_stmt| {
-                    b.allocator.destroy(ret_stmt.ReturnValue);
-                },
-                .expressionStatement => |exp_stmt| {
-                    const exp = exp_stmt.Exp;
-                    switch (exp.*) {
-                        .infix => |infix| {
-                            b.allocator.destroy(infix.Left);
-                            b.allocator.destroy(infix.Right);
-                        },
-                        .prefix => |prefix| {
-                            b.allocator.destroy(prefix.Right);
-                        },
-                        else => {},
-                    }
-                },
-                .identStatement => |ident_stmt| {
-                    _ = ident_stmt.Value;
-                },
-            }
             b.allocator.destroy(stmt);
         }
         b.Statements.deinit();
@@ -316,10 +290,10 @@ pub const BlockStatement = struct {
         return b.Token.Literal;
     }
 
-    pub inline fn addStatement(b: *BlockStatement, stmt: Statement) !void {
-        const stmtPtr = try b.allocator.create(Statement);
-        stmtPtr.* = stmt;
-        try b.Statements.append(stmtPtr);
+    pub inline fn addStatement(b: *BlockStatement, stmt: *Statement) !void {
+        // const stmtPtr = try b.allocator.create(Statement);
+        // stmtPtr.* = stmt;
+        try b.Statements.append(stmt);
     }
 
     pub inline fn string(b: *const BlockStatement, buffer: *ArrayList(u8)) !void {

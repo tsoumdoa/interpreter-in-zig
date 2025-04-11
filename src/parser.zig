@@ -1086,14 +1086,23 @@ test "test function literal" {
             const param = params.items[0];
             try testing.expectEqualStrings("x", param.Value);
 
-            //
-            // const param2 = params.items[1];
-            // try testing.expectEqualStrings("y", param2.);
+            const param2 = params.items[1];
+            try testing.expectEqualStrings("y", param2.Value);
 
-            // const body = functionLiteral.Body.*;
-            // const exp = body.Statements.items[0].expressionStatement.Exp;
-            // var buffer = ArrayList(u8).init(testAlloc);
-            // defer buffer.deinit();
+            const body = functionLiteral.Body.*;
+
+            const exp = body.Statements.items[0].expressionStatement.Exp;
+
+            var buffer = ArrayList(u8).init(testAlloc);
+            defer buffer.deinit();
+
+            switch (exp.*) {
+                else => {
+                    std.debug.print("exp: {}\n", .{exp});
+                    try exp.string(&buffer);
+                },
+            }
+
             // try exp.string(&buffer);
             // try testing.expectEqualStrings("(x + y)", buffer.items);
         },

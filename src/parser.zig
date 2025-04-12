@@ -9,9 +9,18 @@ const assert = debug.assert;
 const ArrayList = std.ArrayList;
 const ParseError = ast.ParseError;
 
-const parseError = error{ ParseError, UnexpectedToken, InvalidSyntax, Overflow, InvalidCharacter, OutOfMemory, InvalidIfExpression, InvalidFunctionLiteral, NoRparen
+const parseError = error{
+    ParseError,
+    UnexpectedToken,
+    InvalidSyntax,
+    Overflow,
+    InvalidCharacter,
+    OutOfMemory,
+    InvalidIfExpression,
+    InvalidFunctionLiteral,
+    NoRparen,
     // ... other errors
-    };
+};
 
 pub const TokenPrecedence = enum(u8) {
     LOWEST = 1,
@@ -32,6 +41,7 @@ const precedences = std.StaticStringMap(u8).initComptime(.{
     .{ @tagName(TokenType.MINUS), @intFromEnum(TokenPrecedence.SUM) },
     .{ @tagName(TokenType.SLASH), @intFromEnum(TokenPrecedence.PRODUCT) },
     .{ @tagName(TokenType.PRODUCT), @intFromEnum(TokenPrecedence.PRODUCT) },
+    .{ @tagName(TokenType.LPAREN), @intFromEnum(TokenPrecedence.CALL) },
 });
 
 pub const Parser = struct {
@@ -42,7 +52,8 @@ pub const Parser = struct {
     errors: ArrayList([]const u8),
     expressions: ArrayList(*ast.Expression),
     blocks: ArrayList(*ast.BlockStatement),
-    params: ArrayList(*ArrayList(ast.Identifier)),
+    params: ArrayList(*ArrayList(*ast.Identifier)),
+    callExpressions: ArrayList(*ArrayList(*ast.Expression)),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
@@ -51,7 +62,8 @@ pub const Parser = struct {
             .errors = ArrayList([]const u8).init(allocator),
             .expressions = ArrayList(*ast.Expression).init(allocator),
             .blocks = ArrayList(*ast.BlockStatement).init(allocator),
-            .params = ArrayList(*ArrayList(ast.Identifier)).init(allocator),
+            .callExpressions = ArrayList(*ArrayList(*ast.Expression)).init(allocator),
+            .params = ArrayList(*ArrayList(*ast.Identifier)).init(allocator),
         };
 
         p.nextToken();
@@ -65,10 +77,10 @@ pub const Parser = struct {
         }
         p.errors.deinit();
 
-        for (p.expressions.items) |expr| {
-            p.allocator.destroy(expr);
+        for (p.callExpressions.items) |args| {
+            args.deinit();
         }
-        p.expressions.deinit();
+        p.callExpressions.deinit();
 
         for (p.blocks.items) |block| {
             block.deinit();
@@ -80,6 +92,11 @@ pub const Parser = struct {
             param.deinit();
         }
         p.params.deinit();
+
+        for (p.expressions.items) |expr| {
+            p.allocator.destroy(expr);
+        }
+        p.expressions.deinit();
     }
 
     pub fn nextToken(p: *Parser) void {
@@ -169,7 +186,7 @@ pub const Parser = struct {
             return err;
         };
         stmt.Exp = expr;
-        while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
+        if (p.peekTokenIs(TokenType.SEMICOLON)) p.nextToken();
         return stmt;
     }
 
@@ -187,6 +204,7 @@ pub const Parser = struct {
             TokenType.LPAREN => leftExpression = try p.parseGroupExpression(),
             TokenType.FUNCTION => leftExpression.* = .{ .functionLiteral = try p.parseFunctionLiteral() },
             TokenType.EOF => {},
+            TokenType.RPAREN => {},
             TokenType.SEMICOLON => {},
             TokenType.ELSE => {},
             TokenType.SUM => {},
@@ -201,7 +219,7 @@ pub const Parser = struct {
             },
         }
 
-        while (!p.curTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < p.peekPrecedence()) {
+        while (!p.peekTokenIs(TokenType.SEMICOLON) and @intFromEnum(precedence) < p.peekPrecedence()) {
             p.nextToken();
             const infixExpression = try p.allocator.create(ast.Expression);
             try p.expressions.append(infixExpression);
@@ -219,6 +237,7 @@ pub const Parser = struct {
                 TokenType.NOT_EQ => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
                 TokenType.LT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
                 TokenType.GT => infixExpression.* = .{ .infix = try p.parseInfixExpression(leftExpression) },
+                TokenType.LPAREN => infixExpression.* = .{ .callExpression = try p.parseCallExpression(leftExpression) },
                 else => {
                     try p.noPrefixParaseFnError(p.curToken.Type);
                 },
@@ -301,6 +320,7 @@ pub const Parser = struct {
         while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) {
             p.nextToken();
             const stmt = try p.allocator.create(ast.Statement);
+            defer p.allocator.destroy(stmt);
             stmt.* = try p.parseStatement();
             switch (stmt.*) {
                 .err => |err| {
@@ -336,8 +356,8 @@ pub const Parser = struct {
         return functionLiteral;
     }
 
-    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(ast.Identifier) {
-        var params = ArrayList(ast.Identifier).init(p.allocator);
+    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(*ast.Identifier) {
+        var params = ArrayList(*ast.Identifier).init(p.allocator);
         try p.params.append(&params);
 
         if (p.peekTokenIs(TokenType.RPAREN)) {
@@ -346,20 +366,74 @@ pub const Parser = struct {
         }
 
         p.nextToken();
-        const ident = p.parseIdentifier();
-        try params.append(ident);
+        {
+            const identPtr = try p.allocator.create(ast.Identifier);
+            identPtr.* = .{ .Token = p.curToken, .Value = p.curToken.Literal };
+            defer p.allocator.destroy(identPtr);
+            try params.append(identPtr);
+        }
 
         while (p.peekTokenIs(TokenType.COMMA)) {
             p.nextToken();
             p.nextToken();
-            const it = p.parseIdentifier();
-            try params.append(it);
+            {
+                const identPtr = try p.allocator.create(ast.Identifier);
+                identPtr.* = .{ .Token = p.curToken, .Value = p.curToken.Literal };
+                defer p.allocator.destroy(identPtr);
+                try params.append(identPtr);
+            }
         }
 
         const isRParen = try p.expectPeek(TokenType.RPAREN);
         if (!isRParen) return parseError.NoRparen;
 
         return &params;
+    }
+    pub inline fn parseCallExpression(p: *Parser, function: *ast.Expression) !ast.CallExpression {
+        var exp = ast.CallExpression{
+            .Token = p.curToken,
+            .Function = function,
+            .Arguments = undefined,
+        };
+        exp.Arguments = try p.parseCallArguments();
+        return exp;
+    }
+
+    pub inline fn parseCallArguments(p: *Parser) !*ArrayList(*ast.Expression) {
+        var args = ArrayList(*ast.Expression).init(p.allocator);
+        try p.callExpressions.append(&args);
+
+        var isRParen = p.peekTokenIs(TokenType.RPAREN);
+        if (isRParen) {
+            p.nextToken();
+            return &args;
+        }
+
+        p.nextToken();
+        {
+            const argPtr = try p.allocator.create(ast.Expression);
+            try p.expressions.append(argPtr);
+            const arg = try p.parseExpression(TokenPrecedence.LOWEST);
+            argPtr.* = arg.*;
+            try args.append(argPtr);
+        }
+
+        while (p.peekTokenIs(TokenType.COMMA)) {
+            p.nextToken();
+            p.nextToken();
+            {
+                const argPtr = try p.allocator.create(ast.Expression);
+                try p.expressions.append(argPtr);
+                const arg = try p.parseExpression(TokenPrecedence.LOWEST);
+                argPtr.* = arg.*;
+                try args.append(argPtr);
+            }
+        }
+
+        isRParen = p.peekTokenIs(TokenType.RPAREN);
+        if (!isRParen) return parseError.NoRparen;
+
+        return &args;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -834,51 +908,51 @@ test "operator precedence parsing" {
 
     const tests = [_]OperatorPreTest{
         .{
-            .input = "-a * b;",
+            .input = "-a * b",
             .expected = "((-a) * b)",
         },
         .{
-            .input = "!-a;",
+            .input = "!-a",
             .expected = "(!(-a))",
         },
         .{
-            .input = "a + b + c;",
+            .input = "a + b + c",
             .expected = "((a + b) + c)",
         },
         .{
-            .input = "a + b - c;",
+            .input = "a + b - c",
             .expected = "((a + b) - c)",
         },
         .{
-            .input = "a * b * c;",
+            .input = "a * b * c",
             .expected = "((a * b) * c)",
         },
         .{
-            .input = "a * b / c;",
+            .input = "a * b / c",
             .expected = "((a * b) / c)",
         },
         .{
-            .input = "a + b / c;",
+            .input = "a + b / c",
             .expected = "(a + (b / c))",
         },
         .{
-            .input = "a + b * c + d / e -f;",
+            .input = "a + b * c + d / e -f",
             .expected = "(((a + (b * c)) + (d / e)) - f)",
         },
         .{
-            .input = "3 + 4-5 * 5;",
+            .input = "3 + 4-5 * 5",
             .expected = "((3 + 4) - (5 * 5))",
         },
         .{
-            .input = "5 > 4 == 3 < 4;",
+            .input = "5 > 4 == 3 < 4",
             .expected = "((5 > 4) == (3 < 4))",
         },
         .{
-            .input = "5 < 4 != 3 > 4;",
+            .input = "5 < 4 != 3 > 4",
             .expected = "((5 < 4) != (3 > 4))",
         },
         .{
-            .input = "3 + 4 * 5 == 3 * 1 + 4 * 5;",
+            .input = "3 + 4 * 5 == 3 * 1 + 4 * 5",
             .expected = "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
         },
         .{
@@ -890,33 +964,49 @@ test "operator precedence parsing" {
             .expected = "false",
         },
         .{
-            .input = "3 < 5 == false;",
+            .input = "3 < 5 == false",
             .expected = "((3 < 5) == false)",
         },
         .{
-            .input = "3 < 5 == true;",
+            .input = "3 < 5 == true",
             .expected = "((3 < 5) == true)",
         },
         .{
-            .input = "1 + (2 + 3) + 4;",
+            .input = "1 + (2 + 3) + 4",
             .expected = "((1 + (2 + 3)) + 4)",
         },
         .{
-            .input = "(5 + 5) * 2;",
+            .input = "(5 + 5) * 2",
             .expected = "((5 + 5) * 2)",
         },
         .{
-            .input = "2 / (5 + 5);",
+            .input = "2 / (5 + 5)",
             .expected = "(2 / (5 + 5))",
         },
         .{
-            .input = "-(5 + 5);",
+            .input = "-(5 + 5)",
             .expected = "(-(5 + 5))",
         },
         .{
             .input = "!(true == true)",
             .expected = "(!(true == true))",
         },
+        .{
+            .input = "a + add(b * c)",
+            .expected = "(a + add((b * c)))",
+        },
+        // .{
+        //     .input = "a + add(b * c) + d",
+        //     .expected = "((a + add((b * c))) + d)",
+        // },
+        // .{
+        //     .input = "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+        //     .expected = "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+        // },
+        // .{
+        //     .input = "add(a + b + c * d / f + g)",
+        //     .expected = "add((((a + b) + ((c * d) / f)) + g))",
+        // },
     };
 
     for (tests) |t| {
@@ -925,9 +1015,6 @@ test "operator precedence parsing" {
         defer p.deinit();
         var program = try p.parseProgram();
         defer program.deinit();
-        if (program.Statements.items.len != 1) {
-            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
-        }
         if (p.errors.items.len != 0) {
             for (p.errors.items) |err| {
                 debug.print("error: {s}\n", .{err});
@@ -936,6 +1023,9 @@ test "operator precedence parsing" {
         }
         const actual = try program.string();
         defer actual.deinit();
+
+        std.debug.print("actual: {s}\n", .{actual.items});
+
         try testing.expectEqualStrings(t.expected, actual.items);
     }
 }
@@ -1040,7 +1130,6 @@ test "test if else expression" {
             buffer.clearAndFree();
 
             if (ifelse.Alternative) |alt| {
-                //statement legnth
                 const a = alt.Statements.items[0];
                 const altExp = a.expressionStatement.Exp;
                 try altExp.string(&buffer);
@@ -1075,6 +1164,9 @@ test "test function literal" {
     var testArrayBuffer = ArrayList(u8).init(testAlloc);
     defer testArrayBuffer.deinit();
 
+    var buffer = ArrayList(u8).init(testAlloc);
+    defer buffer.deinit();
+
     switch (stmt.Exp.*) {
         .functionLiteral => |functionLiteral| {
             const functionToken = functionLiteral.tokenLiteral();
@@ -1089,20 +1181,14 @@ test "test function literal" {
             const param2 = params.items[1];
             try testing.expectEqualStrings("y", param2.Value);
 
+            try functionLiteral.string(&buffer);
+            try testing.expectEqualStrings("fn(x, y) (x + y)", buffer.items);
+
+            buffer.clearRetainingCapacity();
+
             const body = functionLiteral.Body.*;
             const exp = body.Statements.items[0].expressionStatement.Exp;
-            var buffer = ArrayList(u8).init(testAlloc);
-            defer buffer.deinit();
-
-            //little sus that it has to be switched case for it to work
-            //exp.string() would cause memory error
-            switch (exp.*) {
-                .infix => |infix| {
-                    try infix.string(&buffer);
-                },
-                else => {},
-            }
-
+            try exp.string(&buffer);
             try testing.expectEqualStrings("(x + y)", buffer.items);
         },
         else => {
@@ -1110,3 +1196,40 @@ test "test function literal" {
         },
     }
 }
+
+// test "test call expression" {
+//     const testAlloc = testing.allocator;
+//     const input = "add(1, 2 * 3, 4 + 5)";
+//
+//     var l = lexer.Lexer.init(input);
+//     var p = Parser.init(&l, testAlloc);
+//     defer p.deinit();
+//     var program = try p.parseProgram();
+//     defer program.deinit();
+//
+//     for (p.errors.items) |err| {
+//         debug.print("error: {s}\n", .{err});
+//     }
+//
+//     if (program.Statements.items.len != 1) {
+//         debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+//     }
+//
+//     const stmt = program.Statements.items[0].expressionStatement;
+//     var testArrayBuffer = ArrayList(u8).init(testAlloc);
+//     defer testArrayBuffer.deinit();
+//
+//     switch (stmt.Exp.*) {
+//         .callExpression => |exp| {
+//             std.debug.print("exp: {}\n", .{exp});
+//         },
+//         else => {
+//             debug.panic("stmt.Exp is not ifelse", .{});
+//         },
+//     }
+//
+//     //
+//     // switch (stmt.Exp.*) {
+//     //
+//     // }
+// }

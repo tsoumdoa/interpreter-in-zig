@@ -14,6 +14,7 @@ const ExpressionType = enum {
     boolean,
     ifelse,
     functionLiteral,
+    callExpression,
     err,
 };
 
@@ -36,6 +37,7 @@ pub const Expression = union(ExpressionType) {
     boolean: Boolean,
     ifelse: IfElse,
     functionLiteral: FunctionLiteral,
+    callExpression: CallExpression,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -61,6 +63,9 @@ pub const Expression = union(ExpressionType) {
             },
             .functionLiteral => |functionLiteral| {
                 try functionLiteral.string(buffer);
+            },
+            .callExpression => |callExpression| {
+                try callExpression.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -148,7 +153,7 @@ pub const ExpressionStatement = struct {
     pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) ParseError!void {
         switch (es.Exp.*) {
             .ident => |ident| {
-                try buffer.appendSlice(ident.Value);
+                try buffer.appendSlice(ident.Value[0..]);
             },
             .int => |int| {
                 try int.string(buffer);
@@ -165,7 +170,13 @@ pub const ExpressionStatement = struct {
             .ifelse => |ifelse| {
                 try ifelse.string(buffer);
             },
-            else => {},
+            .functionLiteral => |functionLiteral| {
+                try functionLiteral.string(buffer);
+            },
+            .callExpression => |callExpression| {
+                try callExpression.string(buffer);
+            },
+            .err => |_| {},
         }
     }
 };
@@ -279,9 +290,6 @@ pub const BlockStatement = struct {
     }
 
     pub inline fn deinit(b: *BlockStatement) void {
-        for (b.Statements.items) |stmt| {
-            b.allocator.destroy(stmt);
-        }
         b.Statements.deinit();
     }
 
@@ -290,8 +298,6 @@ pub const BlockStatement = struct {
     }
 
     pub inline fn addStatement(b: *BlockStatement, stmt: *Statement) !void {
-        // const stmtPtr = try b.allocator.create(Statement);
-        // stmtPtr.* = stmt;
         try b.Statements.append(stmt);
     }
 
@@ -308,7 +314,7 @@ pub const BlockStatement = struct {
                     try exp_stmt.string(buffer);
                 },
                 .identStatement => |ident_stmt| {
-                    try buffer.appendSlice(ident_stmt.Value);
+                    try buffer.appendSlice(ident_stmt.Value[0..]);
                 },
                 .err => |_| {},
             }
@@ -318,7 +324,7 @@ pub const BlockStatement = struct {
 
 pub const FunctionLiteral = struct {
     Token: token.Token,
-    Params: *ArrayList(Identifier),
+    Params: *ArrayList(*Identifier),
     Body: *BlockStatement,
 
     pub inline fn tokenLiteral(f: *const FunctionLiteral) []const u8 {
@@ -327,13 +333,37 @@ pub const FunctionLiteral = struct {
     pub inline fn string(f: *const FunctionLiteral, buffer: *ArrayList(u8)) !void {
         try buffer.appendSlice("fn");
         try buffer.appendSlice("(");
-        for (f.Params.items) |param| {
+        for (f.Params.items, 0..) |param, i| {
             try buffer.appendSlice(param.string());
-            try buffer.appendSlice(", ");
+            if (i < f.Params.items.len - 1) {
+                try buffer.appendSlice(", ");
+            }
         }
         try buffer.appendSlice(")");
         try buffer.appendSlice(" ");
         try f.Body.string(buffer);
+    }
+};
+
+pub const CallExpression = struct {
+    Token: token.Token,
+    Function: *Expression,
+    Arguments: *ArrayList(*Expression),
+
+    pub inline fn tokenLiteral(c: *const CallExpression) []const u8 {
+        return c.Token.Literal;
+    }
+    pub inline fn string(c: *const CallExpression, buffer: *ArrayList(u8)) !void {
+        try c.Function.string(buffer);
+        try buffer.appendSlice("(");
+        debug.print("arguments length: {}\n", .{c.Arguments.items.len});
+        for (c.Arguments.items, 0..) |arg, i| {
+            try arg.string(buffer);
+            if (i < c.Arguments.items.len - 1) {
+                try buffer.appendSlice(", ");
+            }
+        }
+        try buffer.appendSlice(")");
     }
 };
 
@@ -349,7 +379,9 @@ pub const Program = struct {
     pub inline fn deinit(p: *Program) void {
         for (p.Statements.items) |stmt| {
             switch (stmt.*) {
-                .err => |_| {},
+                .err => |_| {
+                    debug.panic("err", .{});
+                },
                 .letStatement => |let_stmt| {
                     p.allocator.destroy(let_stmt.Name);
                 },
@@ -386,15 +418,19 @@ pub const Program = struct {
                     try ret_stmt.string(&buffer);
                 },
                 .expressionStatement => |exp_stmt| {
+                    std.debug.print("exp_stmt: {}\n", .{exp_stmt});
                     try exp_stmt.string(&buffer);
                 },
                 .identStatement => |ident_stmt| {
                     const ident = ident_stmt.Value;
-                    try buffer.appendSlice(ident);
+                    try buffer.appendSlice(ident[0..]);
                 },
-                .err => |_| {},
+                .err => |_| {
+                    debug.panic("err", .{});
+                },
             }
         }
+        debug.print("buffer3: {s}\n", .{buffer.items});
         return &buffer;
     }
 

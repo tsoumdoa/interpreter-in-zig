@@ -13,6 +13,7 @@ const ExpressionType = enum {
     infix,
     boolean,
     ifelse,
+    functionLiteral,
     err,
 };
 
@@ -34,6 +35,7 @@ pub const Expression = union(ExpressionType) {
     infix: Infix,
     boolean: Boolean,
     ifelse: IfElse,
+    functionLiteral: FunctionLiteral,
     err: AstParseError,
 
     // inline is not option due to recursive call from infix expression
@@ -56,6 +58,9 @@ pub const Expression = union(ExpressionType) {
             },
             .ifelse => |ifelse| {
                 try ifelse.string(buffer);
+            },
+            .functionLiteral => |functionLiteral| {
+                try functionLiteral.string(buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -152,7 +157,6 @@ pub const ExpressionStatement = struct {
                 try infix.string(buffer);
             },
             .prefix => |prefix| {
-                // _ = prefix;
                 try prefix.string(buffer);
             },
             .boolean => |boolean| {
@@ -276,32 +280,6 @@ pub const BlockStatement = struct {
 
     pub inline fn deinit(b: *BlockStatement) void {
         for (b.Statements.items) |stmt| {
-            switch (stmt.*) {
-                .err => |_| {},
-                .letStatement => |let_stmt| {
-                    b.allocator.destroy(let_stmt.Name);
-                    b.allocator.destroy(let_stmt.Value);
-                },
-                .returnStatement => |ret_stmt| {
-                    b.allocator.destroy(ret_stmt.ReturnValue);
-                },
-                .expressionStatement => |exp_stmt| {
-                    const exp = exp_stmt.Exp;
-                    switch (exp.*) {
-                        .infix => |infix| {
-                            b.allocator.destroy(infix.Left);
-                            b.allocator.destroy(infix.Right);
-                        },
-                        .prefix => |prefix| {
-                            b.allocator.destroy(prefix.Right);
-                        },
-                        else => {},
-                    }
-                },
-                .identStatement => |ident_stmt| {
-                    _ = ident_stmt.Value;
-                },
-            }
             b.allocator.destroy(stmt);
         }
         b.Statements.deinit();
@@ -311,10 +289,10 @@ pub const BlockStatement = struct {
         return b.Token.Literal;
     }
 
-    pub inline fn addStatement(b: *BlockStatement, stmt: Statement) !void {
-        const stmtPtr = try b.allocator.create(Statement);
-        stmtPtr.* = stmt;
-        try b.Statements.append(stmtPtr);
+    pub inline fn addStatement(b: *BlockStatement, stmt: *Statement) !void {
+        // const stmtPtr = try b.allocator.create(Statement);
+        // stmtPtr.* = stmt;
+        try b.Statements.append(stmt);
     }
 
     pub inline fn string(b: *const BlockStatement, buffer: *ArrayList(u8)) !void {
@@ -335,6 +313,27 @@ pub const BlockStatement = struct {
                 .err => |_| {},
             }
         }
+    }
+};
+
+pub const FunctionLiteral = struct {
+    Token: token.Token,
+    Params: *ArrayList(Identifier),
+    Body: *BlockStatement,
+
+    pub inline fn tokenLiteral(f: *const FunctionLiteral) []const u8 {
+        return f.Token.Literal;
+    }
+    pub inline fn string(f: *const FunctionLiteral, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice("fn");
+        try buffer.appendSlice("(");
+        for (f.Params.items) |param| {
+            try buffer.appendSlice(param.string());
+            try buffer.appendSlice(", ");
+        }
+        try buffer.appendSlice(")");
+        try buffer.appendSlice(" ");
+        try f.Body.string(buffer);
     }
 };
 

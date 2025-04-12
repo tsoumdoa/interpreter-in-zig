@@ -9,16 +9,9 @@ const assert = debug.assert;
 const ArrayList = std.ArrayList;
 const ParseError = ast.ParseError;
 
-const parseError = error{
-    ParseError,
-    UnexpectedToken,
-    InvalidSyntax,
-    Overflow,
-    InvalidCharacter,
-    OutOfMemory,
-    InvalidIfExpression,
+const parseError = error{ ParseError, UnexpectedToken, InvalidSyntax, Overflow, InvalidCharacter, OutOfMemory, InvalidIfExpression, InvalidFunctionLiteral, NoRparen
     // ... other errors
-};
+    };
 
 pub const TokenPrecedence = enum(u8) {
     LOWEST = 1,
@@ -47,18 +40,18 @@ pub const Parser = struct {
     peekToken: token.Token = undefined,
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
-    // statements: ArrayList(*ast.Statement),
     expressions: ArrayList(*ast.Expression),
     blocks: ArrayList(*ast.BlockStatement),
+    params: ArrayList(*ArrayList(ast.Identifier)),
 
     pub fn init(l: *lexer.Lexer, allocator: std.mem.Allocator) Parser {
         var p = Parser{
             .lexer = l,
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
-            // .statements = ArrayList(*ast.Statement).init(allocator),
             .expressions = ArrayList(*ast.Expression).init(allocator),
             .blocks = ArrayList(*ast.BlockStatement).init(allocator),
+            .params = ArrayList(*ArrayList(ast.Identifier)).init(allocator),
         };
 
         p.nextToken();
@@ -82,6 +75,11 @@ pub const Parser = struct {
             p.allocator.destroy(block);
         }
         p.blocks.deinit();
+
+        for (p.params.items) |param| {
+            param.deinit();
+        }
+        p.params.deinit();
     }
 
     pub fn nextToken(p: *Parser) void {
@@ -164,7 +162,12 @@ pub const Parser = struct {
 
     pub inline fn parseExpressionStatement(p: *Parser) !ast.ExpressionStatement {
         var stmt = ast.ExpressionStatement.init(p.curToken);
-        const expr = try p.parseExpression(TokenPrecedence.LOWEST);
+        const expr = p.parseExpression(TokenPrecedence.LOWEST) catch |err| {
+            std.debug.print("\x1b[1;31m", .{});
+            std.debug.print("parseExpressionStatement err, reason: {}\n", .{err});
+            std.debug.print("\x1b[0m", .{});
+            return err;
+        };
         stmt.Exp = expr;
         while (!p.curTokenIs(TokenType.SEMICOLON) and !p.peekTokenIs(TokenType.EOF)) : (p.nextToken()) {}
         return stmt;
@@ -182,6 +185,7 @@ pub const Parser = struct {
             TokenType.MINUS => leftExpression.* = .{ .prefix = try p.parsePrefixExpression() },
             TokenType.IF => leftExpression.* = .{ .ifelse = try p.parseIfExpression() },
             TokenType.LPAREN => leftExpression = try p.parseGroupExpression(),
+            TokenType.FUNCTION => leftExpression.* = .{ .functionLiteral = try p.parseFunctionLiteral() },
             TokenType.EOF => {},
             TokenType.SEMICOLON => {},
             TokenType.ELSE => {},
@@ -293,11 +297,12 @@ pub const Parser = struct {
         var block = try p.allocator.create(ast.BlockStatement);
         block.* = ast.BlockStatement.init(p.allocator, p.curToken);
         try p.blocks.append(block);
-        p.nextToken();
 
-        while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) : (p.nextToken()) {
-            const stmt = try p.parseStatement();
-            switch (stmt) {
+        while (!p.curTokenIs(TokenType.RBRACE) and !p.curTokenIs(TokenType.EOF)) {
+            p.nextToken();
+            const stmt = try p.allocator.create(ast.Statement);
+            stmt.* = try p.parseStatement();
+            switch (stmt.*) {
                 .err => |err| {
                     _ = err;
                 },
@@ -305,8 +310,56 @@ pub const Parser = struct {
                     try block.addStatement(stmt);
                 },
             }
+            p.nextToken();
         }
         return block;
+    }
+
+    pub inline fn parseFunctionLiteral(p: *Parser) !ast.FunctionLiteral {
+        var functionLiteral = ast.FunctionLiteral{
+            .Token = p.curToken,
+            .Params = undefined,
+            .Body = undefined,
+        };
+
+        const isLParen = try p.expectPeek(TokenType.LPAREN);
+        if (!isLParen) return parseError.InvalidFunctionLiteral;
+
+        const params = try p.parseFunctionParams();
+        functionLiteral.Params = params;
+
+        const isLBrace = try p.expectPeek(TokenType.LBRACE);
+        if (!isLBrace) return parseError.InvalidFunctionLiteral;
+
+        functionLiteral.Body = try p.parseBlockStatement();
+
+        return functionLiteral;
+    }
+
+    pub inline fn parseFunctionParams(p: *Parser) !*ArrayList(ast.Identifier) {
+        var params = ArrayList(ast.Identifier).init(p.allocator);
+        try p.params.append(&params);
+
+        if (p.peekTokenIs(TokenType.RPAREN)) {
+            p.nextToken();
+            return &params;
+        }
+
+        p.nextToken();
+        const ident = p.parseIdentifier();
+        try params.append(ident);
+
+        while (p.peekTokenIs(TokenType.COMMA)) {
+            p.nextToken();
+            p.nextToken();
+            const it = p.parseIdentifier();
+            try params.append(it);
+        }
+
+        const isRParen = try p.expectPeek(TokenType.RPAREN);
+        if (!isRParen) return parseError.NoRparen;
+
+        return &params;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -943,7 +996,7 @@ test "test if expression" {
 
 test "test if else expression" {
     const testAlloc = testing.allocator;
-    const input = "if ( x < y ) { x  ; } else { y };";
+    const input = "if ( x < y ) { x + t;} else { y };";
 
     var l = lexer.Lexer.init(input);
     var p = Parser.init(&l, testAlloc);
@@ -982,7 +1035,7 @@ test "test if else expression" {
             var buffer = ArrayList(u8).init(testAlloc);
             defer buffer.deinit();
             try exp.string(&buffer);
-            try testing.expectEqualStrings("x", buffer.items);
+            try testing.expectEqualStrings("(x + t)", buffer.items);
 
             buffer.clearAndFree();
 
@@ -996,7 +1049,61 @@ test "test if else expression" {
 
             buffer.clearAndFree();
             try ifelse.string(&buffer);
-            try testing.expectEqualStrings("if(x < y) x else y", buffer.items);
+            try testing.expectEqualStrings("if(x < y) (x + t) else y", buffer.items);
+        },
+        else => {
+            debug.panic("stmt.Exp is not ifelse", .{});
+        },
+    }
+}
+
+test "test function literal" {
+    const testAlloc = testing.allocator;
+    const input = "fn(x, y) { x + y; }";
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+
+    const stmt = program.Statements.items[0].expressionStatement;
+    var testArrayBuffer = ArrayList(u8).init(testAlloc);
+    defer testArrayBuffer.deinit();
+
+    switch (stmt.Exp.*) {
+        .functionLiteral => |functionLiteral| {
+            const functionToken = functionLiteral.tokenLiteral();
+            try testing.expectEqualStrings("fn", functionToken);
+
+            const params = functionLiteral.Params;
+            try testing.expectEqual(2, params.items.len);
+
+            const param = params.items[0];
+            try testing.expectEqualStrings("x", param.Value);
+
+            const param2 = params.items[1];
+            try testing.expectEqualStrings("y", param2.Value);
+
+            const body = functionLiteral.Body.*;
+            const exp = body.Statements.items[0].expressionStatement.Exp;
+            var buffer = ArrayList(u8).init(testAlloc);
+            defer buffer.deinit();
+
+            //little sus that it has to be switched case for it to work
+            //exp.string() would cause memory error
+            switch (exp.*) {
+                .infix => |infix| {
+                    try infix.string(&buffer);
+                },
+                else => {},
+            }
+
+            try testing.expectEqualStrings("(x + y)", buffer.items);
         },
         else => {
             debug.panic("stmt.Exp is not ifelse", .{});

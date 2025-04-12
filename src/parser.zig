@@ -1090,28 +1090,23 @@ test "test function literal" {
             try testing.expectEqualStrings("y", param2.Value);
 
             const body = functionLiteral.Body.*;
-
             const exp = body.Statements.items[0].expressionStatement.Exp;
-
             var buffer = ArrayList(u8).init(testAlloc);
             defer buffer.deinit();
 
+            //little sus that it has to be switched case for it to work
+            //exp.string() would cause memory error
             switch (exp.*) {
-                else => {
-                    std.debug.print("exp: {}\n", .{exp});
-                    try exp.string(&buffer);
+                .infix => |infix| {
+                    try infix.string(&buffer);
                 },
+                else => {},
             }
 
-            // try exp.string(&buffer);
-            // try testing.expectEqualStrings("(x + y)", buffer.items);
+            try testing.expectEqualStrings("(x + y)", buffer.items);
         },
         else => {
             debug.panic("stmt.Exp is not ifelse", .{});
         },
     }
-
-    // for (p.errors.items) |err| {
-    //     debug.print("error: {s}\n", .{err});
-    // }
 }

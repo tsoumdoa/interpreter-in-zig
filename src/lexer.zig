@@ -286,7 +286,6 @@ test "test extended token" {
 
     while (l.char != 0) {
         const tok = l.nextToken();
-        // std.debug.print("type: {any}, literal:{s}\n", .{ tok.Type, tok.Literal });
         try testing.expectEqual(expectedTokens[index].Type, tok.Type);
         try testing.expectEqualStrings(expectedTokens[index].Literal, tok.Literal);
         index += 1;

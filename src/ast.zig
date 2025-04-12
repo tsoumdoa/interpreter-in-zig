@@ -157,7 +157,6 @@ pub const ExpressionStatement = struct {
                 try infix.string(buffer);
             },
             .prefix => |prefix| {
-                // _ = prefix;
                 try prefix.string(buffer);
             },
             .boolean => |boolean| {

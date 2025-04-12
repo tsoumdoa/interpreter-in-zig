@@ -418,6 +418,7 @@ pub const Program = struct {
                     try ret_stmt.string(&buffer);
                 },
                 .expressionStatement => |exp_stmt| {
+                    //todo find where invalid enum came from...
                     std.debug.print("exp_stmt: {}\n", .{exp_stmt});
                     try exp_stmt.string(&buffer);
                 },

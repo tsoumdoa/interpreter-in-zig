@@ -549,7 +549,8 @@ test "parse let statement with invalid" {
     }
 }
 
-test "parse return  statement" {
+// todo: fix this test
+test "parse return statement" {
     const testAlloc = testing.allocator;
 
     const Test = struct {
@@ -579,16 +580,18 @@ test "parse return  statement" {
         var program = try p.parseProgram();
         defer program.deinit();
 
-        // if (program.Statements.items.len != 1) {
-        //     debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
-        // }
-        // debug.print("program.Statements.items.len: {d}\n", .{program.Statements.items.len});
+        const actual = try program.string();
+        defer actual.deinit();
 
-        // const ident = program.Statements.items[0].returnStatement.ReturnValue;
-        // var buffer = ArrayList(u8).init(testAlloc);
-        // defer buffer.deinit();
-        // try ident.string(&buffer);
-        // try testing.expectEqualStrings(t.expectedValue, buffer.items);
+        if (program.Statements.items.len != 1) {
+            debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+        }
+
+        const ident = program.Statements.items[0].returnStatement.ReturnValue;
+        var buffer = ArrayList(u8).init(testAlloc);
+        defer buffer.deinit();
+        try ident.string(&buffer);
+        try testing.expectEqualStrings(t.expectedValue, buffer.items);
     }
 }
 

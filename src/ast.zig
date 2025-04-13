@@ -414,7 +414,7 @@ pub const Program = struct {
                     p.allocator.destroy(let_stmt.Name);
                 },
                 .returnStatement => |ret_stmt| {
-                    p.allocator.destroy(ret_stmt.ReturnValue);
+                    _ = ret_stmt.ReturnValue;
                 },
                 .expressionStatement => |exp_stmt| {
                     _ = exp_stmt.Exp;

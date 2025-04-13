@@ -1159,6 +1159,10 @@ test "test function literal" {
     var buffer = ArrayList(u8).init(testAlloc);
     defer buffer.deinit();
 
+    const actual = try program.string();
+    defer actual.deinit();
+    try testing.expectEqualStrings("fn(x, y) (x + y)", actual.items);
+
     switch (stmt.Exp.*) {
         .functionLiteral => |functionLiteral| {
             const functionToken = functionLiteral.tokenLiteral();
@@ -1189,39 +1193,25 @@ test "test function literal" {
     }
 }
 
-// test "test call expression" {
-//     const testAlloc = testing.allocator;
-//     const input = "add(1, 2 * 3, 4 + 5)";
-//
-//     var l = lexer.Lexer.init(input);
-//     var p = Parser.init(&l, testAlloc);
-//     defer p.deinit();
-//     var program = try p.parseProgram();
-//     defer program.deinit();
-//
-//     for (p.errors.items) |err| {
-//         debug.print("error: {s}\n", .{err});
-//     }
-//
-//     if (program.Statements.items.len != 1) {
-//         debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
-//     }
-//
-//     const stmt = program.Statements.items[0].expressionStatement;
-//     var testArrayBuffer = ArrayList(u8).init(testAlloc);
-//     defer testArrayBuffer.deinit();
-//
-//     switch (stmt.Exp.*) {
-//         .callExpression => |exp| {
-//             std.debug.print("exp: {}\n", .{exp});
-//         },
-//         else => {
-//             debug.panic("stmt.Exp is not ifelse", .{});
-//         },
-//     }
-//
-//     //
-//     // switch (stmt.Exp.*) {
-//     //
-//     // }
-// }
+test "test call expression" {
+    const testAlloc = testing.allocator;
+    const input = "add(1, 2 * 3, 4 + 5)";
+
+    var l = lexer.Lexer.init(input);
+    var p = Parser.init(&l, testAlloc);
+    defer p.deinit();
+    var program = try p.parseProgram();
+    defer program.deinit();
+
+    for (p.errors.items) |err| {
+        debug.print("error: {s}\n", .{err});
+    }
+
+    if (program.Statements.items.len != 1) {
+        debug.panic("program.Statements.items.len != 1, got len: {}", .{program.Statements.items.len});
+    }
+
+    const actual = try program.string();
+    defer actual.deinit();
+    try testing.expectEqualStrings("add(1, (2 * 3), (4 + 5))", actual.items);
+}

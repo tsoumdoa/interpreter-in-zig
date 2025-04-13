@@ -51,6 +51,7 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
     errors: ArrayList([]const u8),
     expressions: ArrayList(*ast.Expression),
+    calls: ArrayList(*ast.CallExpression),
     blocks: ArrayList(*ast.BlockStatement),
     params: ArrayList(*ArrayList(*ast.Identifier)),
     callExpressions: ArrayList(*ArrayList(*ast.Expression)),
@@ -61,6 +62,7 @@ pub const Parser = struct {
             .allocator = allocator,
             .errors = ArrayList([]const u8).init(allocator),
             .expressions = ArrayList(*ast.Expression).init(allocator),
+            .calls = ArrayList(*ast.CallExpression).init(allocator),
             .blocks = ArrayList(*ast.BlockStatement).init(allocator),
             .callExpressions = ArrayList(*ArrayList(*ast.Expression)).init(allocator),
             .params = ArrayList(*ArrayList(*ast.Identifier)).init(allocator),
@@ -81,6 +83,12 @@ pub const Parser = struct {
             args.deinit();
         }
         p.callExpressions.deinit();
+
+        for (p.calls.items) |call| {
+            call.deinit();
+            p.allocator.destroy(call);
+        }
+        p.calls.deinit();
 
         for (p.blocks.items) |block| {
             block.deinit();
@@ -389,51 +397,37 @@ pub const Parser = struct {
 
         return &params;
     }
-    pub inline fn parseCallExpression(p: *Parser, function: *ast.Expression) !ast.CallExpression {
-        var exp = ast.CallExpression{
-            .Token = p.curToken,
-            .Function = function,
-            .Arguments = undefined,
-        };
-        exp.Arguments = try p.parseCallArguments();
+    pub inline fn parseCallExpression(p: *Parser, function: *ast.Expression) !*ast.CallExpression {
+        var exp = try p.allocator.create(ast.CallExpression);
+        exp.* = ast.CallExpression.init(p.allocator, p.curToken, function);
+        try p.parseCallArguments(&exp.Arguments);
+        try p.calls.append(exp);
         return exp;
     }
 
-    pub inline fn parseCallArguments(p: *Parser) !*ArrayList(*ast.Expression) {
-        var args = ArrayList(*ast.Expression).init(p.allocator);
-        try p.callExpressions.append(&args);
-
+    pub inline fn parseCallArguments(p: *Parser, args: *ArrayList(*ast.Expression)) !void {
         var isRParen = p.peekTokenIs(TokenType.RPAREN);
         if (isRParen) {
             p.nextToken();
-            return &args;
+            const nullPtr = try p.allocator.create(ast.Expression);
+            nullPtr.* = .{ .null = {} };
+            try p.expressions.append(nullPtr);
+            try args.append(nullPtr);
+            return;
         }
 
         p.nextToken();
-        {
-            const argPtr = try p.allocator.create(ast.Expression);
-            try p.expressions.append(argPtr);
-            const arg = try p.parseExpression(TokenPrecedence.LOWEST);
-            argPtr.* = arg.*;
-            try args.append(argPtr);
-        }
+        try args.append(try p.parseExpression(TokenPrecedence.LOWEST));
 
         while (p.peekTokenIs(TokenType.COMMA)) {
             p.nextToken();
             p.nextToken();
-            {
-                const argPtr = try p.allocator.create(ast.Expression);
-                try p.expressions.append(argPtr);
-                const arg = try p.parseExpression(TokenPrecedence.LOWEST);
-                argPtr.* = arg.*;
-                try args.append(argPtr);
-            }
+            try args.append(try p.parseExpression(TokenPrecedence.LOWEST));
         }
 
-        isRParen = p.peekTokenIs(TokenType.RPAREN);
+        isRParen = try p.expectPeek(TokenType.RPAREN);
         if (!isRParen) return parseError.NoRparen;
-
-        return &args;
+        return;
     }
 
     pub inline fn parseIdentifier(p: *Parser) ast.Identifier {
@@ -995,18 +989,18 @@ test "operator precedence parsing" {
             .input = "a + add(b * c)",
             .expected = "(a + add((b * c)))",
         },
-        // .{
-        //     .input = "a + add(b * c) + d",
-        //     .expected = "((a + add((b * c))) + d)",
-        // },
-        // .{
-        //     .input = "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
-        //     .expected = "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
-        // },
-        // .{
-        //     .input = "add(a + b + c * d / f + g)",
-        //     .expected = "add((((a + b) + ((c * d) / f)) + g))",
-        // },
+        .{
+            .input = "a + add(b * c) + d",
+            .expected = "((a + add((b * c))) + d)",
+        },
+        .{
+            .input = "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+            .expected = "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+        },
+        .{
+            .input = "add(a + b + c * d / f + g)",
+            .expected = "add((((a + b) + ((c * d) / f)) + g))",
+        },
     };
 
     for (tests) |t| {
@@ -1019,12 +1013,10 @@ test "operator precedence parsing" {
             for (p.errors.items) |err| {
                 debug.print("error: {s}\n", .{err});
             }
-            debug.panic("parse error - check syntax", .{});
+            debug.panic("parse error - check syntax: {s}", .{p.lexer.input});
         }
         const actual = try program.string();
         defer actual.deinit();
-
-        std.debug.print("actual: {s}\n", .{actual.items});
 
         try testing.expectEqualStrings(t.expected, actual.items);
     }

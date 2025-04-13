@@ -16,6 +16,7 @@ const ExpressionType = enum {
     functionLiteral,
     callExpression,
     err,
+    null,
 };
 
 pub const ParseError = error{
@@ -37,8 +38,9 @@ pub const Expression = union(ExpressionType) {
     boolean: Boolean,
     ifelse: IfElse,
     functionLiteral: FunctionLiteral,
-    callExpression: CallExpression,
+    callExpression: *CallExpression,
     err: AstParseError,
+    null: void,
 
     // inline is not option due to recursive call from infix expression
     pub fn string(e: *const Expression, buffer: *ArrayList(u8)) ParseError!void {
@@ -70,6 +72,7 @@ pub const Expression = union(ExpressionType) {
             .err => |_| {
                 return error.ParseError;
             },
+            .null => |_| {},
         }
     }
 };
@@ -177,6 +180,7 @@ pub const ExpressionStatement = struct {
                 try callExpression.string(buffer);
             },
             .err => |_| {},
+            .null => |_| {},
         }
     }
 };
@@ -348,7 +352,22 @@ pub const FunctionLiteral = struct {
 pub const CallExpression = struct {
     Token: token.Token,
     Function: *Expression,
-    Arguments: *ArrayList(*Expression),
+    Arguments: ArrayList(*Expression),
+    Allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token, function: *Expression) CallExpression {
+        const list = ArrayList(*Expression).init(allocator);
+        return CallExpression{
+            .Token = tokenValue,
+            .Function = function,
+            .Arguments = list,
+            .Allocator = allocator,
+        };
+    }
+
+    pub inline fn deinit(c: *CallExpression) void {
+        c.Arguments.deinit();
+    }
 
     pub inline fn tokenLiteral(c: *const CallExpression) []const u8 {
         return c.Token.Literal;
@@ -356,7 +375,6 @@ pub const CallExpression = struct {
     pub inline fn string(c: *const CallExpression, buffer: *ArrayList(u8)) !void {
         try c.Function.string(buffer);
         try buffer.appendSlice("(");
-        debug.print("arguments length: {}\n", .{c.Arguments.items.len});
         for (c.Arguments.items, 0..) |arg, i| {
             try arg.string(buffer);
             if (i < c.Arguments.items.len - 1) {
@@ -418,8 +436,6 @@ pub const Program = struct {
                     try ret_stmt.string(&buffer);
                 },
                 .expressionStatement => |exp_stmt| {
-                    //todo find where invalid enum came from...
-                    std.debug.print("exp_stmt: {}\n", .{exp_stmt});
                     try exp_stmt.string(&buffer);
                 },
                 .identStatement => |ident_stmt| {
@@ -431,7 +447,6 @@ pub const Program = struct {
                 },
             }
         }
-        debug.print("buffer3: {s}\n", .{buffer.items});
         return &buffer;
     }
 

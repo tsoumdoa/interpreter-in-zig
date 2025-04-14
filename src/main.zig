@@ -7,6 +7,8 @@ const lexer = @import("lexer.zig");
 const repl = @import("repl.zig");
 const ast = @import("ast.zig");
 const parser = @import("parser.zig");
+const object = @import("object.zig");
+const evaluator = @import("evaluator.zig");
 
 pub fn main() !void {
     var gpa_impl: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -28,4 +30,6 @@ test {
     testing.refAllDecls(repl);
     testing.refAllDecls(ast);
     testing.refAllDecls(parser);
+    testing.refAllDecls(object);
+    testing.refAllDecls(evaluator); 
 }

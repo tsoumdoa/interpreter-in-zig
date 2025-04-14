@@ -5,6 +5,7 @@ const Reader = std.io.GenericReader;
 const Writer = std.io.GenericWriter;
 const stdin = std.io.getStdIn().reader();
 const stdout = std.io.getStdOut().writer();
+const evaluator = @import("evaluator.zig");
 
 const PROMPT = ">> ";
 const monkey =
@@ -54,10 +55,15 @@ pub fn start() !void {
                 continue;
             }
 
-            const out = try program.string();
-            defer out.deinit();
+            var buffer = std.ArrayList(u8).init(alloc);
+            defer buffer.deinit();
+            const object = try evaluator.Eval(program.Statements.items[0].expressionStatement.Exp);
+            try object.Inspect(&buffer);
+            try stdout.print("{s}\n", .{buffer.items});
 
-            try stdout.print("{s}\n", .{out.items});
+            // const out = try program.string();
+            // defer out.deinit();
+            // try stdout.print("{s}\n", .{out.items});
         }
     }
 }

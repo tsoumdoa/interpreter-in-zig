@@ -57,7 +57,7 @@ pub fn start() !void {
 
             var buffer = std.ArrayList(u8).init(alloc);
             defer buffer.deinit();
-            const object = try evaluator.Eval(program.Statements.items[0].expressionStatement.Exp);
+            const object = try evaluator.Eval(program.Statements.items[0].expressionStatement.Exp, alloc);
             try object.Inspect(&buffer);
             try stdout.print("{s}\n", .{buffer.items});
 
@@ -66,4 +66,5 @@ pub fn start() !void {
             // try stdout.print("{s}\n", .{out.items});
         }
     }
+    defer gpa.deinit();
 }

@@ -53,6 +53,7 @@ inline fn evalPrefixExpression(operator: []const u8, right: object.Object) objec
 }
 
 inline fn evalInfixExpression(operator: []const u8, left: object.Object, right: object.Object) object.Object {
+    // assuming all obj to be integer here, which is not great...
     if (std.mem.eql(u8, operator, "+")) {
         return object.Object{ .integer = left.integer + right.integer };
     } else if (std.mem.eql(u8, operator, "-")) {

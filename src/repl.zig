@@ -66,4 +66,5 @@ pub fn start() !void {
             // try stdout.print("{s}\n", .{out.items});
         }
     }
+    defer gpa.deinit();
 }

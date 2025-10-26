@@ -138,9 +138,9 @@ test "test eval boolean expression" {
 
         const eval = try Eval(program.Statements.items[0].expressionStatement.Exp, testAlloc);
 
-        var buffer = ArrayList(u8).init(testAlloc);
-        defer buffer.deinit();
-        try object.Object.Inspect(eval, &buffer);
+        var buffer: ArrayList(u8) = .empty;
+        defer buffer.deinit(testAlloc);
+        try object.Object.Inspect(eval, testAlloc, &buffer);
 
         if (eval.boolean) {
             try testing.expectEqualStrings("true", buffer.items);
@@ -183,8 +183,8 @@ test "test bang operator" {
 
         const eval = try Eval(program.Statements.items[0].expressionStatement.Exp, testAlloc);
 
-        var buffer = ArrayList(u8).init(testAlloc);
-        defer buffer.deinit();
+        var buffer: ArrayList(u8) = .empty;
+        defer buffer.deinit(testAlloc);
         switch (eval) {
             .boolean => |b| {
                 testing.expectEqual(t.expected, b) catch |err| {
@@ -234,8 +234,8 @@ test "test eval integer" {
 
         const eval = try Eval(program.Statements.items[0].expressionStatement.Exp, testAlloc);
 
-        var buffer = ArrayList(u8).init(testAlloc);
-        defer buffer.deinit();
+        var buffer: ArrayList(u8) = .empty;
+        defer buffer.deinit(testAlloc);
         switch (eval) {
             .integer => |i| {
                 try testing.expectEqual(t.expected, i);

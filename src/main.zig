@@ -15,11 +15,15 @@ pub fn main() !void {
     const gpa = gpa_impl.allocator();
     const user = try process.getEnvVarOwned(gpa, "USER");
 
-    try std.io.getStdOut().writer().print(
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+
+    try stdout.print(
         "Hello {s}! This is the Monkey programming language!\n",
         .{user},
     );
-    try std.io.getStdOut().writer().print("Feel free to type in commands\n", .{});
+    try stdout.print("Feel free to type in commands\n", .{});
 
     try repl.start();
 }
@@ -31,5 +35,5 @@ test {
     testing.refAllDecls(ast);
     testing.refAllDecls(parser);
     testing.refAllDecls(object);
-    testing.refAllDecls(evaluator); 
+    testing.refAllDecls(evaluator);
 }

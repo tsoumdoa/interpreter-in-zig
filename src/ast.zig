@@ -43,31 +43,31 @@ pub const Expression = union(ExpressionType) {
     null: void,
 
     // inline is not option due to recursive call from infix expression
-    pub fn string(e: *const Expression, buffer: *ArrayList(u8)) ParseError!void {
+    pub fn string(e: *const Expression, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) ParseError!void {
         switch (e.*) {
             .ident => |ident| {
-                try buffer.appendSlice(ident.string());
+                try buffer.appendSlice(alloc, ident.string());
             },
             .int => |int| {
-                try int.string(buffer);
+                try int.string(alloc, buffer);
             },
             .prefix => |prefix| {
-                try prefix.string(buffer);
+                try prefix.string(alloc, buffer);
             },
             .infix => |infix| {
-                try infix.string(buffer);
+                try infix.string(alloc, buffer);
             },
             .boolean => |boolean| {
-                try boolean.string(buffer);
+                try boolean.string(alloc, buffer);
             },
             .ifelse => |ifelse| {
-                try ifelse.string(buffer);
+                try ifelse.string(alloc, buffer);
             },
             .functionLiteral => |functionLiteral| {
-                try functionLiteral.string(buffer);
+                try functionLiteral.string(alloc, buffer);
             },
             .callExpression => |callExpression| {
-                try callExpression.string(buffer);
+                try callExpression.string(alloc, buffer);
             },
             .err => |_| {
                 return error.ParseError;
@@ -110,13 +110,13 @@ pub const LetStatement = struct {
     pub inline fn tokenLiteral(ls: *const LetStatement) []const u8 {
         return ls.Token.Literal;
     }
-    pub inline fn string(ls: *const LetStatement, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice(ls.tokenLiteral());
-        try buffer.appendSlice(" ");
-        try buffer.appendSlice(ls.Name.string());
-        try buffer.appendSlice(" = ");
-        try ls.Value.string(buffer);
-        try buffer.appendSlice(";");
+    pub inline fn string(ls: *const LetStatement, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, ls.tokenLiteral());
+        try buffer.appendSlice(alloc, " ");
+        try buffer.appendSlice(alloc, ls.Name.string());
+        try buffer.appendSlice(alloc, " = ");
+        try ls.Value.string(alloc, buffer);
+        try buffer.appendSlice(alloc, ";");
     }
 };
 
@@ -130,11 +130,11 @@ pub const ReturnStatement = struct {
     pub inline fn tokenLiteral(rs: *const ReturnStatement) []const u8 {
         return rs.Token.Literal;
     }
-    pub inline fn string(rs: *const ReturnStatement, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice(rs.tokenLiteral());
-        try buffer.appendSlice(" ");
-        try rs.ReturnValue.string(buffer);
-        try buffer.appendSlice(";");
+    pub inline fn string(rs: *const ReturnStatement, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, rs.tokenLiteral());
+        try buffer.appendSlice(alloc, " ");
+        try rs.ReturnValue.string(alloc, buffer);
+        try buffer.appendSlice(alloc, ";");
     }
 };
 
@@ -149,31 +149,31 @@ pub const ExpressionStatement = struct {
         return es.Token.Literal;
     }
 
-    pub fn string(es: *const ExpressionStatement, buffer: *ArrayList(u8)) ParseError!void {
+    pub fn string(es: *const ExpressionStatement, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) ParseError!void {
         switch (es.Exp.*) {
             .ident => |ident| {
-                try buffer.appendSlice(ident.Value[0..]);
+                try buffer.appendSlice(alloc, ident.Value[0..]);
             },
             .int => |int| {
-                try int.string(buffer);
+                try int.string(alloc, buffer);
             },
             .infix => |infix| {
-                try infix.string(buffer);
+                try infix.string(alloc, buffer);
             },
             .prefix => |prefix| {
-                try prefix.string(buffer);
+                try prefix.string(alloc, buffer);
             },
             .boolean => |boolean| {
-                try boolean.string(buffer);
+                try boolean.string(alloc, buffer);
             },
             .ifelse => |ifelse| {
-                try ifelse.string(buffer);
+                try ifelse.string(alloc, buffer);
             },
             .functionLiteral => |functionLiteral| {
-                try functionLiteral.string(buffer);
+                try functionLiteral.string(alloc, buffer);
             },
             .callExpression => |callExpression| {
-                try callExpression.string(buffer);
+                try callExpression.string(alloc, buffer);
             },
             .err => |_| {},
             .null => |_| {},
@@ -200,10 +200,10 @@ pub const Integer = struct {
     pub inline fn tokenLiteral(i: *const Integer) []const u8 {
         return i.Token.Literal;
     }
-    pub inline fn string(i: *const Integer, buffer: *std.ArrayList(u8)) !void {
+    pub inline fn string(i: *const Integer, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
         var buf: [12]u8 = undefined;
         const bytes = try std.fmt.bufPrint(&buf, "{}", .{i.Value});
-        try buffer.appendSlice(bytes);
+        try buffer.appendSlice(alloc, bytes);
     }
 };
 
@@ -215,12 +215,12 @@ pub const Prefix = struct {
     pub inline fn tokenLiteral(p: *const Prefix) []const u8 {
         return p.Token.Literal;
     }
-    pub inline fn string(p: *const Prefix, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice("(");
-        try buffer.appendSlice(p.Operator);
+    pub inline fn string(p: *const Prefix, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, "(");
+        try buffer.appendSlice(alloc, p.Operator);
         const right = p.Right.*;
-        try right.string(buffer);
-        try buffer.appendSlice(")");
+        try right.string(alloc, buffer);
+        try buffer.appendSlice(alloc, ")");
     }
 };
 
@@ -233,16 +233,16 @@ pub const Infix = struct {
     pub inline fn tokenLiteral(i: *const Infix) []const u8 {
         return i.Token.Literal;
     }
-    pub inline fn string(i: *const Infix, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice("(");
+    pub inline fn string(i: *const Infix, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, "(");
         const left = i.Left.*;
-        try left.string(buffer);
-        try buffer.appendSlice(" ");
-        try buffer.appendSlice(i.Operator);
-        try buffer.appendSlice(" ");
+        try left.string(alloc, buffer);
+        try buffer.appendSlice(alloc, " ");
+        try buffer.appendSlice(alloc, i.Operator);
+        try buffer.appendSlice(alloc, " ");
         const right = i.Right.*;
-        try right.string(buffer);
-        try buffer.appendSlice(")");
+        try right.string(alloc, buffer);
+        try buffer.appendSlice(alloc, ")");
     }
 };
 
@@ -253,8 +253,8 @@ pub const Boolean = struct {
     pub inline fn tokenLiteral(b: *const Boolean) []const u8 {
         return b.Token.Literal;
     }
-    pub inline fn string(b: *const Boolean, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice(b.tokenLiteral());
+    pub inline fn string(b: *const Boolean, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, b.tokenLiteral());
     }
 };
 
@@ -268,14 +268,14 @@ pub const IfElse = struct {
         return i.Token.Literal;
     }
 
-    pub inline fn string(i: *const IfElse, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice("if");
-        try i.Condition.*.string(buffer);
-        try buffer.appendSlice(" ");
-        try i.Consequence.*.string(buffer);
+    pub inline fn string(i: *const IfElse, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, "if");
+        try i.Condition.*.string(alloc, buffer);
+        try buffer.appendSlice(alloc, " ");
+        try i.Consequence.*.string(alloc, buffer);
         if (i.Alternative) |alt| {
-            try buffer.appendSlice(" else ");
-            try alt.string(buffer);
+            try buffer.appendSlice(alloc, " else ");
+            try alt.string(alloc, buffer);
         }
     }
 };
@@ -285,12 +285,12 @@ pub const BlockStatement = struct {
     Statements: ArrayList(*Statement),
     allocator: std.mem.Allocator,
     pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token) BlockStatement {
-        const list = ArrayList(*Statement).init(allocator);
+        const list: ArrayList(*Statement) = .empty;
         return BlockStatement{ .Token = tokenValue, .Statements = list, .allocator = allocator };
     }
 
     pub inline fn deinit(b: *BlockStatement) void {
-        b.Statements.deinit();
+        b.Statements.deinit(b.allocator);
     }
 
     pub inline fn tokenLiteral(b: *const BlockStatement) []const u8 {
@@ -298,23 +298,23 @@ pub const BlockStatement = struct {
     }
 
     pub inline fn addStatement(b: *BlockStatement, stmt: *Statement) !void {
-        try b.Statements.append(stmt);
+        try b.Statements.append(b.allocator, stmt);
     }
 
-    pub inline fn string(b: *const BlockStatement, buffer: *ArrayList(u8)) !void {
+    pub inline fn string(b: *const BlockStatement, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
         for (b.Statements.items) |stmt| {
             switch (stmt.*) {
                 .letStatement => |let_stmt| {
-                    try let_stmt.string(buffer);
+                    try let_stmt.string(alloc, buffer);
                 },
                 .returnStatement => |ret_stmt| {
-                    try ret_stmt.string(buffer);
+                    try ret_stmt.string(alloc, buffer);
                 },
                 .expressionStatement => |exp_stmt| {
-                    try exp_stmt.string(buffer);
+                    try exp_stmt.string(alloc, buffer);
                 },
                 .identStatement => |ident_stmt| {
-                    try buffer.appendSlice(ident_stmt.Value[0..]);
+                    try buffer.appendSlice(alloc, ident_stmt.Value[0..]);
                 },
                 .err => |_| {},
             }
@@ -331,31 +331,31 @@ pub const FunctionLiteral = struct {
     pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token) FunctionLiteral {
         return FunctionLiteral{
             .Token = tokenValue,
-            .Params = ArrayList(*Identifier).init(allocator),
+            .Params = ArrayList(*Identifier).empty,
             .Body = undefined,
             .Allocator = allocator,
         };
     }
 
     pub inline fn deinit(f: *FunctionLiteral) void {
-        f.Params.deinit();
+        f.Params.deinit(f.Allocator);
     }
 
     pub inline fn tokenLiteral(f: *const FunctionLiteral) []const u8 {
         return f.Token.Literal;
     }
-    pub inline fn string(f: *const FunctionLiteral, buffer: *ArrayList(u8)) !void {
-        try buffer.appendSlice("fn");
-        try buffer.appendSlice("(");
+    pub inline fn string(f: *const FunctionLiteral, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try buffer.appendSlice(alloc, "fn");
+        try buffer.appendSlice(alloc, "(");
         for (f.Params.items, 0..) |param, i| {
-            try buffer.appendSlice(param.string());
+            try buffer.appendSlice(alloc, param.string());
             if (i < f.Params.items.len - 1) {
-                try buffer.appendSlice(", ");
+                try buffer.appendSlice(alloc, ", ");
             }
         }
-        try buffer.appendSlice(")");
-        try buffer.appendSlice(" ");
-        try f.Body.string(buffer);
+        try buffer.appendSlice(alloc, ")");
+        try buffer.appendSlice(alloc, " ");
+        try f.Body.string(alloc, buffer);
     }
 };
 
@@ -366,7 +366,7 @@ pub const CallExpression = struct {
     Allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, tokenValue: token.Token, function: *Expression) CallExpression {
-        const list = ArrayList(*Expression).init(allocator);
+        const list: ArrayList(*Expression) = .empty;
         return CallExpression{
             .Token = tokenValue,
             .Function = function,
@@ -376,22 +376,22 @@ pub const CallExpression = struct {
     }
 
     pub inline fn deinit(c: *CallExpression) void {
-        c.Arguments.deinit();
+        c.Arguments.deinit(c.Allocator);
     }
 
     pub inline fn tokenLiteral(c: *const CallExpression) []const u8 {
         return c.Token.Literal;
     }
-    pub inline fn string(c: *const CallExpression, buffer: *ArrayList(u8)) !void {
-        try c.Function.string(buffer);
-        try buffer.appendSlice("(");
+    pub inline fn string(c: *const CallExpression, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
+        try c.Function.string(alloc, buffer);
+        try buffer.appendSlice(alloc, "(");
         for (c.Arguments.items, 0..) |arg, i| {
-            try arg.string(buffer);
+            try arg.string(alloc, buffer);
             if (i < c.Arguments.items.len - 1) {
-                try buffer.appendSlice(", ");
+                try buffer.appendSlice(alloc, ", ");
             }
         }
-        try buffer.appendSlice(")");
+        try buffer.appendSlice(alloc, ")");
     }
 };
 
@@ -400,8 +400,10 @@ pub const Program = struct {
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) Program {
-        const list = ArrayList(*Statement).init(allocator);
-        return Program{ .Statements = list, .allocator = allocator };
+        return Program{
+            .Statements = std.ArrayList(*Statement).empty,
+            .allocator = allocator,
+        };
     }
 
     pub inline fn deinit(p: *Program) void {
@@ -425,32 +427,32 @@ pub const Program = struct {
             }
             p.allocator.destroy(stmt);
         }
-        p.Statements.deinit();
+        p.Statements.deinit(p.allocator);
     }
 
     pub inline fn addStatement(p: *Program, stmt: Statement) !void {
         const stmtPtr = try p.allocator.create(Statement);
         stmtPtr.* = stmt;
-        try p.Statements.append(stmtPtr);
+        try p.Statements.append(p.allocator, stmtPtr);
     }
 
     pub inline fn string(p: *Program) !*ArrayList(u8) {
-        var buffer = ArrayList(u8).init(p.allocator);
+        var buffer: ArrayList(u8) = .empty;
 
         for (p.Statements.items) |stmt| {
             switch (stmt.*) {
                 .letStatement => |let_stmt| {
-                    try let_stmt.string(&buffer);
+                    try let_stmt.string(p.allocator, &buffer);
                 },
                 .returnStatement => |ret_stmt| {
-                    try ret_stmt.string(&buffer);
+                    try ret_stmt.string(p.allocator, &buffer);
                 },
                 .expressionStatement => |exp_stmt| {
-                    try exp_stmt.string(&buffer);
+                    try exp_stmt.string(p.allocator, &buffer);
                 },
                 .identStatement => |ident_stmt| {
                     const ident = ident_stmt.Value;
-                    try buffer.appendSlice(ident[0..]);
+                    try buffer.appendSlice(p.allocator, ident[0..]);
                 },
                 .err => |_| {
                     debug.panic("err", .{});

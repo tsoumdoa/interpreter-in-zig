@@ -20,15 +20,15 @@ pub const Object = union(ObjectType) {
         }
     }
 
-    pub fn Inspect(o: Object, buffer: *ArrayList(u8)) !void {
+    pub fn Inspect(o: Object, alloc: std.mem.Allocator, buffer: *ArrayList(u8)) !void {
         switch (o) {
             .integer => |i| {
                 var buf: [12]u8 = undefined;
                 const bytes = try std.fmt.bufPrint(&buf, "{}", .{i});
-                try buffer.appendSlice(bytes);
+                try buffer.appendSlice(alloc, bytes);
             },
-            .boolean => |b| try buffer.appendSlice(if (b) "true" else "false"),
-            .null => try buffer.appendSlice("null"),
+            .boolean => |b| try buffer.appendSlice(alloc, if (b) "true" else "false"),
+            .null => try buffer.appendSlice(alloc, "null"),
         }
     }
 };
